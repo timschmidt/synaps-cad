@@ -1,5 +1,5 @@
-use bevy_egui::egui;
 use crate::plugins::ui::utils::highlight_openscad;
+use bevy_egui::egui;
 
 /// Render chat message content with code blocks highlighted.
 pub fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> egui::Response {
@@ -7,12 +7,15 @@ pub fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> 
     let code_color = egui::Color32::from_rgb(220, 220, 170);
     let lang_color = egui::Color32::from_rgb(100, 100, 130);
     let use_highlighting = |lang: &str| -> bool {
-        matches!(lang.to_lowercase().as_str(), "synapscad" | "openscad" | "scad")
+        matches!(
+            lang.to_lowercase().as_str(),
+            "synapscad" | "openscad" | "scad"
+        )
     };
 
-    let find_bg    = egui::Color32::from_rgb(46, 24, 24);
+    let find_bg = egui::Color32::from_rgb(46, 24, 24);
     let replace_bg = egui::Color32::from_rgb(20, 42, 24);
-    let find_label_color    = egui::Color32::from_rgb(200, 100, 100);
+    let find_label_color = egui::Color32::from_rgb(200, 100, 100);
     let replace_label_color = egui::Color32::from_rgb(100, 180, 100);
 
     let mut last_resp: Option<egui::Response> = None;
@@ -20,7 +23,7 @@ pub fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> 
 
     while !remaining.is_empty() {
         let replace_pos = remaining.find("<<<REPLACE");
-        let fence_pos   = remaining.find("```");
+        let fence_pos = remaining.find("```");
 
         let handle_replace = replace_pos.is_some_and(|r| fence_pos.is_none_or(|f| r <= f));
 
@@ -39,10 +42,16 @@ pub fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> 
                 remaining = "";
                 continue;
             };
-            let Some(sep) = after_newline.find("\n===\n") else { remaining = ""; continue; };
-            let search_text  = &after_newline[..sep];
-            let after_sep    = &after_newline[sep + "\n===\n".len()..];
-            let Some(end)    = after_sep.find("\n>>>") else { remaining = ""; continue; };
+            let Some(sep) = after_newline.find("\n===\n") else {
+                remaining = "";
+                continue;
+            };
+            let search_text = &after_newline[..sep];
+            let after_sep = &after_newline[sep + "\n===\n".len()..];
+            let Some(end) = after_sep.find("\n>>>") else {
+                remaining = "";
+                continue;
+            };
             let replace_text = &after_sep[..end];
 
             let r = egui::Frame::new()
@@ -65,9 +74,18 @@ pub fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> 
                         .corner_radius(egui::CornerRadius::same(3))
                         .inner_margin(egui::Margin::same(4))
                         .show(ui, |ui| {
-                            ui.label(egui::RichText::new("replace").small().color(replace_label_color));
+                            ui.label(
+                                egui::RichText::new("replace")
+                                    .small()
+                                    .color(replace_label_color),
+                            );
                             if replace_text.trim().is_empty() {
-                                ui.label(egui::RichText::new("(delete)").small().italics().color(lang_color));
+                                ui.label(
+                                    egui::RichText::new("(delete)")
+                                        .small()
+                                        .italics()
+                                        .color(lang_color),
+                                );
                             } else {
                                 let font_id = egui::FontId::monospace(12.0);
                                 ui.label(highlight_openscad(replace_text.trim_end(), font_id));
@@ -221,7 +239,7 @@ pub fn render_thinking_content(ui: &mut egui::Ui, text: &str) {
         for (i, part) in parts.iter().enumerate() {
             let is_bold = i % 2 == 1;
             let color = if is_bold { strong_color } else { text_color };
-            
+
             job.append(
                 part,
                 0.0,

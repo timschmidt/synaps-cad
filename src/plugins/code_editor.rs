@@ -153,16 +153,18 @@ pub fn detect_views(code: &str) -> (Option<String>, Vec<String>) {
             // Conditional: $view == "xxx"
             let after_eq = trimmed.strip_prefix("==").unwrap_or_default().trim_start();
             if let Some(val) = extract_quoted_string(after_eq)
-                && !views.contains(&val) {
-                    views.push(val);
-                }
+                && !views.contains(&val)
+            {
+                views.push(val);
+            }
         } else if trimmed.starts_with('=') {
             // Assignment: $view = "xxx";
             let after_eq = trimmed.strip_prefix('=').unwrap_or_default().trim_start();
             if let Some(val) = extract_quoted_string(after_eq)
-                && active.is_none() {
-                    active = Some(val);
-                }
+                && active.is_none()
+            {
+                active = Some(val);
+            }
         }
         search_from = abs_pos + 5;
     }
@@ -186,13 +188,14 @@ pub fn set_active_view(code: &mut String, view_name: &str) -> bool {
             let quote_offset = eq_offset + 1 + (after_eq.len() - after_eq_trimmed.len());
 
             if after_eq_trimmed.starts_with('"')
-                && let Some(end_quote) = after_eq_trimmed[1..].find('"') {
-                    let old_start = quote_offset;
-                    let old_end = quote_offset + 1 + end_quote + 1;
-                    let new_val = format!("\"{view_name}\"");
-                    code.replace_range(old_start..old_end, &new_val);
-                    return true;
-                }
+                && let Some(end_quote) = after_eq_trimmed[1..].find('"')
+            {
+                let old_start = quote_offset;
+                let old_end = quote_offset + 1 + end_quote + 1;
+                let new_val = format!("\"{view_name}\"");
+                code.replace_range(old_start..old_end, &new_val);
+                return true;
+            }
         }
         search_from = abs_pos + 5;
     }

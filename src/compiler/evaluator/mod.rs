@@ -1,17 +1,17 @@
+use openscad_rs::ast::{Argument, Expr, Parameter, SourceFile, Statement};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use openscad_rs::ast::{Argument, Expr, Parameter, SourceFile, Statement};
 
-use super::geometry::{Shape, BoolOp, TransformKind};
+use super::geometry::{BoolOp, Shape, TransformKind};
 
 pub mod value;
 pub use value::Value;
 
-pub mod primitives;
-pub mod transformations;
 pub mod booleans;
 pub mod builtins;
+pub mod primitives;
+pub mod transformations;
 
 #[cfg(test)]
 mod tests;
@@ -53,7 +53,7 @@ impl Default for Evaluator {
 }
 
 impl Evaluator {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         let mut variables = HashMap::new();
         variables.insert("$fn".into(), Value::Number(0.0));
@@ -76,19 +76,29 @@ impl Evaluator {
     /// Check if compilation has been canceled.
     #[must_use]
     pub fn is_canceled(&self) -> bool {
-        self.cancel.as_ref().is_some_and(|c| c.load(Ordering::Relaxed))
+        self.cancel
+            .as_ref()
+            .is_some_and(|c| c.load(Ordering::Relaxed))
     }
 
     /// Resolve `$fn` from either explicit args or global variable.
     /// Uses `OpenSCAD` logic: if `$fn` > 0, use it.
     /// Otherwise, use `$fa` (min angle) and `$fs` (min size) based on radius `r`.
-    #[must_use] 
+    #[must_use]
     pub fn resolve_fn(&self, args: &[(Option<String>, Value)]) -> usize {
         self.resolve_fn_with_radius(args, None)
     }
 
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::similar_names)]
-    pub fn resolve_fn_with_radius(&self, args: &[(Option<String>, Value)], r: Option<f64>) -> usize {
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::similar_names
+    )]
+    pub fn resolve_fn_with_radius(
+        &self,
+        args: &[(Option<String>, Value)],
+        r: Option<f64>,
+    ) -> usize {
         let fn_val = Self::get_named_arg(args, "$fn")
             .and_then(Value::as_number)
             .or_else(|| self.variables.get("$fn").and_then(Value::as_number))
@@ -98,8 +108,16 @@ impl Evaluator {
             return fn_val as usize;
         }
 
-        let fa = self.variables.get("$fa").and_then(Value::as_number).unwrap_or(12.0);
-        let fs = self.variables.get("$fs").and_then(Value::as_number).unwrap_or(2.0);
+        let fa = self
+            .variables
+            .get("$fa")
+            .and_then(Value::as_number)
+            .unwrap_or(12.0);
+        let fs = self
+            .variables
+            .get("$fs")
+            .and_then(Value::as_number)
+            .unwrap_or(2.0);
 
         // Limit fa to a reasonable minimum to prevent infinite segments
         let fa = fa.max(0.01);
@@ -176,7 +194,11 @@ impl Evaluator {
         }
     }
 
-    pub fn eval_statement(&mut self, stmt: &Statement, shapes: &mut Vec<(Shape, Option<[f32; 3]>)>) {
+    pub fn eval_statement(
+        &mut self,
+        stmt: &Statement,
+        shapes: &mut Vec<(Shape, Option<[f32; 3]>)>,
+    ) {
         if self.is_canceled() {
             return;
         }
@@ -596,14 +618,14 @@ impl Evaluator {
             .collect()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn get_named_arg<'a>(args: &'a [(Option<String>, Value)], name: &str) -> Option<&'a Value> {
         args.iter()
             .find(|(n, _)| n.as_deref() == Some(name))
             .map(|(_, v)| v)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn get_positional_arg(args: &[(Option<String>, Value)], idx: usize) -> Option<&Value> {
         let mut pos = 0;
         for (name, val) in args {
@@ -617,7 +639,7 @@ impl Evaluator {
         None
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn get_arg<'a>(
         args: &'a [(Option<String>, Value)],
         name: &str,

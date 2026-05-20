@@ -6756,6 +6756,7 @@ dependencies = [
  "csgrs",
  "dirs",
  "genai",
+ "getrandom 0.3.4",
  "image",
  "lib3mf",
  "nalgebra",
@@ -6767,6 +6768,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "ttf-parser 0.25.1",
+ "url",
  "winresource",
 ]
 

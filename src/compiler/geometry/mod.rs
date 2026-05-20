@@ -1,13 +1,13 @@
 use std::fmt;
 
 use csgrs::bmesh::BMesh;
+use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
 use csgrs::mesh::plane::Plane;
 use csgrs::sketch::Sketch;
-use csgrs::csg::CSG;
 use nalgebra::Vector3;
 
-use crate::compiler::geometry::conversions::{csg_mesh_to_bmesh, bmesh_to_csg_mesh};
+use crate::compiler::geometry::conversions::{bmesh_to_csg_mesh, csg_mesh_to_bmesh};
 
 #[derive(Clone, Copy, Debug)]
 pub enum BoolOp {
@@ -83,8 +83,12 @@ impl Shape {
 
     #[must_use]
     pub fn union(self, other: Self) -> Self {
-        if let Self::Failed(e) = &self { return Self::Failed(e.clone()); }
-        if let Self::Failed(e) = &other { return Self::Failed(e.clone()); }
+        if let Self::Failed(e) = &self {
+            return Self::Failed(e.clone());
+        }
+        if let Self::Failed(e) = &other {
+            return Self::Failed(e.clone());
+        }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.union(&b)),
             (a, b) => Self::bool_op_with_fallback(a, b, BoolOp::Union),
@@ -93,8 +97,12 @@ impl Shape {
 
     #[must_use]
     pub fn difference(self, other: Self) -> Self {
-        if let Self::Failed(e) = &self { return Self::Failed(e.clone()); }
-        if let Self::Failed(e) = &other { return Self::Failed(e.clone()); }
+        if let Self::Failed(e) = &self {
+            return Self::Failed(e.clone());
+        }
+        if let Self::Failed(e) = &other {
+            return Self::Failed(e.clone());
+        }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.difference(&b)),
             (a, b) => Self::bool_op_with_fallback(a, b, BoolOp::Difference),
@@ -103,8 +111,12 @@ impl Shape {
 
     #[must_use]
     pub fn intersection(self, other: Self) -> Self {
-        if let Self::Failed(e) = &self { return Self::Failed(e.clone()); }
-        if let Self::Failed(e) = &other { return Self::Failed(e.clone()); }
+        if let Self::Failed(e) = &self {
+            return Self::Failed(e.clone());
+        }
+        if let Self::Failed(e) = &other {
+            return Self::Failed(e.clone());
+        }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.intersection(&b)),
             (a, b) => Self::bool_op_with_fallback(a, b, BoolOp::Intersection),
@@ -121,12 +133,10 @@ impl Shape {
         let b_bmesh = csg_mesh_to_bmesh(&b_csg);
 
         if let (Ok(ab), Ok(bb)) = (a_bmesh, b_bmesh) {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                match op {
-                    BoolOp::Union => ab.union(&bb),
-                    BoolOp::Difference => ab.difference(&bb),
-                    BoolOp::Intersection => ab.intersection(&bb),
-                }
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match op {
+                BoolOp::Union => ab.union(&bb),
+                BoolOp::Difference => ab.difference(&bb),
+                BoolOp::Intersection => ab.intersection(&bb),
             }));
             if let Ok(r) = result {
                 return Self::Mesh3D(Box::new(r));
@@ -196,10 +206,13 @@ impl Shape {
     /// Try a `BMesh` transform; on panic fall back to `CsgMesh` transform.
     fn bmesh_transform_with_fallback(m: BMesh<()>, f: impl FnOnce(BMesh<()>) -> BMesh<()>) -> Self {
         let csg_backup = bmesh_to_csg_mesh(&m);
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(m))).map_or_else(|_| {
-            eprintln!("[SynapsCAD] BMesh transform panicked, falling back to CsgMesh");
-            Self::FallbackMesh(csg_backup)
-        }, |result| Self::Mesh3D(Box::new(result)))
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(m))).map_or_else(
+            |_| {
+                eprintln!("[SynapsCAD] BMesh transform panicked, falling back to CsgMesh");
+                Self::FallbackMesh(csg_backup)
+            },
+            |result| Self::Mesh3D(Box::new(result)),
+        )
     }
 
     #[must_use]

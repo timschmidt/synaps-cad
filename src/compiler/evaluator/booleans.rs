@@ -1,8 +1,8 @@
-use openscad_rs::ast::Statement;
 use csgrs::mesh::Mesh as CsgMesh;
+use openscad_rs::ast::Statement;
 
 use super::{Evaluator, Value};
-use crate::compiler::geometry::{Shape, BoolOp};
+use crate::compiler::geometry::{BoolOp, Shape};
 
 impl Evaluator {
     #[allow(clippy::missing_panics_doc)]
@@ -122,10 +122,8 @@ impl Evaluator {
     pub fn parse_color_args(args: &[(Option<String>, Value)]) -> Option<[f32; 3]> {
         let first = args.first().map(|(_, v)| v)?;
         match first {
-            Value::String(name) => {
-                parse_hex_color(name)
-                    .or_else(|| crate::compiler::rendering::colors::named_color(name))
-            }
+            Value::String(name) => parse_hex_color(name)
+                .or_else(|| crate::compiler::rendering::colors::named_color(name)),
             Value::List(items) => {
                 if items.len() >= 3 {
                     let r = items[0].as_number()? as f32;
@@ -149,20 +147,32 @@ fn parse_hex_color(s: &str) -> Option<[f32; 3]> {
             let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
             let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
             let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-            Some([f32::from(r) / 255.0, f32::from(g) / 255.0, f32::from(b) / 255.0])
+            Some([
+                f32::from(r) / 255.0,
+                f32::from(g) / 255.0,
+                f32::from(b) / 255.0,
+            ])
         }
         3 => {
             let r = u8::from_str_radix(&hex[0..1], 16).ok()?;
             let g = u8::from_str_radix(&hex[1..2], 16).ok()?;
             let b = u8::from_str_radix(&hex[2..3], 16).ok()?;
-            Some([f32::from(r) / 15.0, f32::from(g) / 15.0, f32::from(b) / 15.0])
+            Some([
+                f32::from(r) / 15.0,
+                f32::from(g) / 15.0,
+                f32::from(b) / 15.0,
+            ])
         }
         8 => {
             // #RRGGBBAA — ignore alpha
             let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
             let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
             let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-            Some([f32::from(r) / 255.0, f32::from(g) / 255.0, f32::from(b) / 255.0])
+            Some([
+                f32::from(r) / 255.0,
+                f32::from(g) / 255.0,
+                f32::from(b) / 255.0,
+            ])
         }
         _ => None,
     }

@@ -1,12 +1,12 @@
-use openscad_rs::ast::Statement;
-use csgrs::mesh::Mesh as CsgMesh;
 use csgrs::bmesh::BMesh;
-use csgrs::sketch::Sketch;
 use csgrs::csg::CSG;
+use csgrs::mesh::Mesh as CsgMesh;
+use csgrs::sketch::Sketch;
+use openscad_rs::ast::Statement;
 
 use super::{Evaluator, Value};
-use crate::compiler::geometry::{Shape, TransformKind};
 use crate::compiler::geometry::conversions::{axis_angle_to_euler, bmesh_to_csg_mesh};
+use crate::compiler::geometry::{Shape, TransformKind};
 
 impl Evaluator {
     pub fn eval_transform(
@@ -186,7 +186,8 @@ impl Evaluator {
                         .push("3D mesh child inside extrude, skipping".into());
                 }
                 Shape::Failed(e) => {
-                    self.warnings.push(format!("Failed child inside extrude: {e}"));
+                    self.warnings
+                        .push(format!("Failed child inside extrude: {e}"));
                 }
             }
         }

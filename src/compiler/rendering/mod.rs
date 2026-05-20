@@ -3,8 +3,8 @@ use image::ImageEncoder;
 
 use super::types::{MeshData, ViewImage};
 
-pub mod fonts;
 pub mod colors;
+pub mod fonts;
 
 const VIEW_SIZE: u32 = 256;
 const BG_COLOR: [u8; 3] = [50, 50, 60];
@@ -31,7 +31,7 @@ const VIEW_PART_PALETTE: &[[f32; 3]] = &[
     [0.55, 0.75, 0.65],
 ];
 
-#[must_use] 
+#[must_use]
 pub fn render_orthographic_views(parts: &[MeshData]) -> Vec<ViewImage> {
     render_orthographic_views_sized(parts, VIEW_SIZE)
 }
@@ -71,8 +71,15 @@ pub fn render_orthographic_views_sized(parts: &[MeshData], size: u32) -> Vec<Vie
     let mut result: Vec<ViewImage> = views
         .iter()
         .map(|(label, axes, flips)| {
-            let base64_png =
-                render_single_view(&all_pos, &all_norm, &all_idx, &tri_colors, *axes, *flips, size);
+            let base64_png = render_single_view(
+                &all_pos,
+                &all_norm,
+                &all_idx,
+                &tri_colors,
+                *axes,
+                *flips,
+                size,
+            );
             ViewImage {
                 label: (*label).to_string(),
                 base64_png,
@@ -223,13 +230,14 @@ fn render_iso_view(
 
     let mut png_bytes = Vec::new();
     let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
-    encoder.write_image(
-        img_buf.as_raw(),
-        view_size,
-        view_size,
-        image::ExtendedColorType::Rgb8,
-    )
-    .expect("PNG encoding failed");
+    encoder
+        .write_image(
+            img_buf.as_raw(),
+            view_size,
+            view_size,
+            image::ExtendedColorType::Rgb8,
+        )
+        .expect("PNG encoding failed");
 
     base64::engine::general_purpose::STANDARD.encode(&png_bytes)
 }
@@ -371,13 +379,14 @@ fn render_single_view(
 
     let mut png_bytes = Vec::new();
     let encoder = image::codecs::png::PngEncoder::new(&mut png_bytes);
-    encoder.write_image(
-        img_buf.as_raw(),
-        view_size,
-        view_size,
-        image::ExtendedColorType::Rgb8,
-    )
-    .expect("PNG encoding failed");
+    encoder
+        .write_image(
+            img_buf.as_raw(),
+            view_size,
+            view_size,
+            image::ExtendedColorType::Rgb8,
+        )
+        .expect("PNG encoding failed");
 
     base64::engine::general_purpose::STANDARD.encode(&png_bytes)
 }

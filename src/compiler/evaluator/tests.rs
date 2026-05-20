@@ -1,9 +1,9 @@
 use super::*;
-use crate::compiler::{compile_scad_code, CompilationResult, MeshData};
 use crate::compiler::geometry::conversions::{bmesh_to_csg_mesh, bmesh_to_mesh_data};
-use csgrs::mesh::Mesh as CsgMesh;
+use crate::compiler::{CompilationResult, MeshData, compile_scad_code};
 use csgrs::bmesh::BMesh;
 use csgrs::csg::CSG;
+use csgrs::mesh::Mesh as CsgMesh;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -94,14 +94,18 @@ linear_extrude(height = 5)
 "#;
     let result = compile_with_timeout(code, 0);
     match result {
-        CompilationResult::Success { parts, warnings, .. } => {
+        CompilationResult::Success {
+            parts, warnings, ..
+        } => {
             assert!(!parts.is_empty(), "text() should produce geometry");
             assert!(
                 parts[0].positions.len() > 10,
                 "Extruded text should have many vertices"
             );
             assert!(
-                !warnings.iter().any(|w: &String| w.contains("text() not yet supported")),
+                !warnings
+                    .iter()
+                    .any(|w: &String| w.contains("text() not yet supported")),
                 "text() should be supported now"
             );
         }
@@ -122,7 +126,10 @@ linear_extrude(height = 2)
             assert!(!parts.is_empty(), "Centered text should produce geometry");
             let has_neg_x = parts[0].positions.iter().any(|p| p[0] < 0.0);
             let has_pos_x = parts[0].positions.iter().any(|p| p[0] > 0.0);
-            assert!(has_neg_x && has_pos_x, "Centered text should span origin in X");
+            assert!(
+                has_neg_x && has_pos_x,
+                "Centered text should span origin in X"
+            );
         }
         CompilationResult::Error(e) => panic!("Compilation failed: {e}"),
         CompilationResult::Canceled => panic!("Compilation was unexpectedly canceled"),
@@ -198,18 +205,38 @@ translate([0,10,0])
     match result {
         CompilationResult::Success { parts, .. } => {
             assert_eq!(parts.len(), 4, "Should produce 4 text parts");
-            let rtl_x_min = parts[3].positions.iter().map(|p| p[0]).fold(f32::MAX, f32::min);
-            assert!(rtl_x_min >= -0.5, "RTL text should be in positive x region, got x_min={rtl_x_min}");
-            let btt_y_min = parts[1].positions.iter().map(|p| p[2]).fold(f32::MAX, f32::min);
-            assert!(btt_y_min > -0.5, "BTT text should be in positive y after mirror, got y_min={btt_y_min}");
-            let ttb_y_min = parts[2].positions.iter().map(|p| p[2]).fold(f32::MAX, f32::min);
-            assert!(ttb_y_min > -0.5, "TTB text should be in positive y after mirror, got y_min={ttb_y_min}");
+            let rtl_x_min = parts[3]
+                .positions
+                .iter()
+                .map(|p| p[0])
+                .fold(f32::MAX, f32::min);
+            assert!(
+                rtl_x_min >= -0.5,
+                "RTL text should be in positive x region, got x_min={rtl_x_min}"
+            );
+            let btt_y_min = parts[1]
+                .positions
+                .iter()
+                .map(|p| p[2])
+                .fold(f32::MAX, f32::min);
+            assert!(
+                btt_y_min > -0.5,
+                "BTT text should be in positive y after mirror, got y_min={btt_y_min}"
+            );
+            let ttb_y_min = parts[2]
+                .positions
+                .iter()
+                .map(|p| p[2])
+                .fold(f32::MAX, f32::min);
+            assert!(
+                ttb_y_min > -0.5,
+                "TTB text should be in positive y after mirror, got y_min={ttb_y_min}"
+            );
         }
         CompilationResult::Error(e) => panic!("Text direction should not fail: {e}"),
         CompilationResult::Canceled => panic!("Compilation was unexpectedly canceled"),
     }
 }
-
 
 #[test]
 fn test_axis_angle_rotate() {
@@ -278,7 +305,6 @@ fn compile_to_merged_mesh(code: &str) -> MeshData {
     }
 }
 
-
 #[test]
 fn test_scalar_vector_mul() {
     let m = compile_to_merged_mesh("r=25; translate(r * [1, 0, 0]) cube(5);");
@@ -304,8 +330,7 @@ ring(20, 4) { cube(3); }
 "#;
     let result = compile_with_timeout(code, 0);
     match result {
-    CompilationResult::Success { parts, .. } => {
-
+        CompilationResult::Success { parts, .. } => {
             let total_verts: usize = parts.iter().map(|p| p.positions.len()).sum();
             assert!(
                 total_verts >= 96,
@@ -620,7 +645,10 @@ fn assert_example_matches_reference(relative: &str) {
         CompilationResult::Canceled => panic!("Compilation was unexpectedly canceled"),
     };
     let ref_name = relative.replace(".scad", ".json");
-    let ref_path = format!("{}/tests/openscad_references/{ref_name}", env!("CARGO_MANIFEST_DIR"));
+    let ref_path = format!(
+        "{}/tests/openscad_references/{ref_name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
     let ref_json = match std::fs::read_to_string(&ref_path) {
         Ok(json) => json,
         Err(_) => return,
@@ -637,7 +665,10 @@ fn assert_example_matches_reference_loose(relative: &str) {
         CompilationResult::Canceled => panic!("Compilation was unexpectedly canceled"),
     };
     let ref_name = relative.replace(".scad", ".json");
-    let ref_path = format!("{}/tests/openscad_references/{ref_name}", env!("CARGO_MANIFEST_DIR"));
+    let ref_path = format!(
+        "{}/tests/openscad_references/{ref_name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
     let ref_json = match std::fs::read_to_string(&ref_path) {
         Ok(json) => json,
         Err(_) => return,
@@ -646,7 +677,12 @@ fn assert_example_matches_reference_loose(relative: &str) {
     assert_example_matches_reference_data(relative, &parts, &ref_json, 2.0);
 }
 
-fn assert_example_matches_reference_data(relative: &str, parts: &[crate::compiler::MeshData], ref_json: &str, tolerance: f64) {
+fn assert_example_matches_reference_data(
+    relative: &str,
+    parts: &[crate::compiler::MeshData],
+    ref_json: &str,
+    tolerance: f64,
+) {
     let reference: ReferenceData = serde_json::from_str(ref_json).unwrap();
     let mut our_min = [f64::INFINITY; 3];
     let mut our_max = [f64::NEG_INFINITY; 3];
@@ -666,10 +702,20 @@ fn assert_example_matches_reference_data(relative: &str, parts: &[crate::compile
     for i in 0..3 {
         let ref_size = (ref_max[i] - ref_min[i]).abs();
         let tol = f64::max(1.0, ref_size * 0.10); // increased bbox tolerance to 10%
-        assert!((our_min[i] - ref_min[i]).abs() <= tol, "bbox min mismatch axis {i}: ours {}, ref {}", our_min[i], ref_min[i]);
-        assert!((our_max[i] - ref_max[i]).abs() <= tol, "bbox max mismatch axis {i}: ours {}, ref {}", our_max[i], ref_max[i]);
+        assert!(
+            (our_min[i] - ref_min[i]).abs() <= tol,
+            "bbox min mismatch axis {i}: ours {}, ref {}",
+            our_min[i],
+            ref_min[i]
+        );
+        assert!(
+            (our_max[i] - ref_max[i]).abs() <= tol,
+            "bbox max mismatch axis {i}: ours {}, ref {}",
+            our_max[i],
+            ref_max[i]
+        );
     }
-    
+
     let facet_diff = if our_triangles > reference.facets {
         our_triangles - reference.facets
     } else {
@@ -685,93 +731,181 @@ fn assert_example_matches_reference_data(relative: &str, parts: &[crate::compile
 }
 
 #[test]
-fn openscad_basics_csg() { assert_example_matches_reference("Basics/CSG.scad"); }
+fn openscad_basics_csg() {
+    assert_example_matches_reference("Basics/CSG.scad");
+}
 #[test]
-fn openscad_basics_csg_modules() { assert_example_matches_reference("Basics/CSG-modules.scad"); }
+fn openscad_basics_csg_modules() {
+    assert_example_matches_reference("Basics/CSG-modules.scad");
+}
 #[test]
-fn openscad_basics_hull() { assert_example_matches_reference("Basics/hull.scad"); }
+fn openscad_basics_hull() {
+    assert_example_matches_reference("Basics/hull.scad");
+}
 #[test]
-fn openscad_basics_linear_extrude() { assert_example_no_panic("Basics/linear_extrude.scad"); }
+fn openscad_basics_linear_extrude() {
+    assert_example_no_panic("Basics/linear_extrude.scad");
+}
 #[test]
-fn openscad_basics_logo() { assert_example_compiles("Basics/logo.scad"); }
+fn openscad_basics_logo() {
+    assert_example_compiles("Basics/logo.scad");
+}
 #[test]
-fn openscad_basics_rotate_extrude() { assert_example_compiles("Basics/rotate_extrude.scad"); }
+fn openscad_basics_rotate_extrude() {
+    assert_example_compiles("Basics/rotate_extrude.scad");
+}
 #[test]
-fn openscad_basics_letterblock() { assert_example_compiles("Basics/LetterBlock.scad"); }
+fn openscad_basics_letterblock() {
+    assert_example_compiles("Basics/LetterBlock.scad");
+}
 #[test]
-fn openscad_basics_logo_and_text() { assert_example_compiles("Basics/logo_and_text.scad"); }
+fn openscad_basics_logo_and_text() {
+    assert_example_compiles("Basics/logo_and_text.scad");
+}
 #[test]
-fn openscad_basics_projection() { assert_example_matches_reference("Basics/projection.scad"); }
+fn openscad_basics_projection() {
+    assert_example_matches_reference("Basics/projection.scad");
+}
 #[test]
-fn openscad_basics_roof() { assert_example_no_panic("Basics/roof.scad"); }
+fn openscad_basics_roof() {
+    assert_example_no_panic("Basics/roof.scad");
+}
 #[test]
-fn openscad_basics_text_on_cube() { assert_example_matches_reference_loose("Basics/text_on_cube.scad"); }
+fn openscad_basics_text_on_cube() {
+    assert_example_matches_reference_loose("Basics/text_on_cube.scad");
+}
 #[test]
-fn openscad_functions_echo() { assert_example_no_panic("Functions/echo.scad"); }
+fn openscad_functions_echo() {
+    assert_example_no_panic("Functions/echo.scad");
+}
 #[test]
-fn openscad_functions_functions() { assert_example_matches_reference_loose("Functions/functions.scad"); }
+fn openscad_functions_functions() {
+    assert_example_matches_reference_loose("Functions/functions.scad");
+}
 #[test]
-fn openscad_functions_list_comprehensions() { assert_example_no_panic("Functions/list_comprehensions.scad"); }
+fn openscad_functions_list_comprehensions() {
+    assert_example_no_panic("Functions/list_comprehensions.scad");
+}
 #[test]
-fn openscad_functions_recursion() { assert_example_no_panic("Functions/recursion.scad"); }
+fn openscad_functions_recursion() {
+    assert_example_no_panic("Functions/recursion.scad");
+}
 #[test]
-fn openscad_advanced_children() { assert_example_compiles("Advanced/children.scad"); }
+fn openscad_advanced_children() {
+    assert_example_compiles("Advanced/children.scad");
+}
 #[test]
-fn openscad_advanced_children_indexed() { assert_example_compiles("Advanced/children_indexed.scad"); }
+fn openscad_advanced_children_indexed() {
+    assert_example_compiles("Advanced/children_indexed.scad");
+}
 #[test]
-fn openscad_advanced_module_recursion() { assert_example_no_panic("Advanced/module_recursion.scad"); }
+fn openscad_advanced_module_recursion() {
+    assert_example_no_panic("Advanced/module_recursion.scad");
+}
 #[test]
-fn openscad_advanced_geb() { assert_example_compiles("Advanced/GEB.scad"); }
+fn openscad_advanced_geb() {
+    assert_example_compiles("Advanced/GEB.scad");
+}
 #[test]
-fn openscad_advanced_offset() { assert_example_compiles("Advanced/offset.scad"); }
+fn openscad_advanced_offset() {
+    assert_example_compiles("Advanced/offset.scad");
+}
 #[test]
-fn openscad_advanced_animation() { assert_example_compiles("Advanced/animation.scad"); }
+fn openscad_advanced_animation() {
+    assert_example_compiles("Advanced/animation.scad");
+}
 #[test]
-fn openscad_advanced_assert() { assert_example_matches_reference("Advanced/assert.scad"); }
+fn openscad_advanced_assert() {
+    assert_example_matches_reference("Advanced/assert.scad");
+}
 #[test]
-fn openscad_advanced_surface_image() { assert_example_no_panic("Advanced/surface_image.scad"); }
+fn openscad_advanced_surface_image() {
+    assert_example_no_panic("Advanced/surface_image.scad");
+}
 #[test]
-fn openscad_old_example001() { assert_example_compiles("Old/example001.scad"); }
+fn openscad_old_example001() {
+    assert_example_compiles("Old/example001.scad");
+}
 #[test]
-fn openscad_old_example002() { assert_example_matches_reference("Old/example002.scad"); }
+fn openscad_old_example002() {
+    assert_example_matches_reference("Old/example002.scad");
+}
 #[test]
-fn openscad_old_example003() { assert_example_matches_reference("Old/example003.scad"); }
+fn openscad_old_example003() {
+    assert_example_matches_reference("Old/example003.scad");
+}
 #[test]
-fn openscad_old_example004() { assert_example_matches_reference("Old/example004.scad"); }
+fn openscad_old_example004() {
+    assert_example_matches_reference("Old/example004.scad");
+}
 #[test]
-fn openscad_old_example006() { assert_example_compiles("Old/example006.scad"); }
+fn openscad_old_example006() {
+    assert_example_compiles("Old/example006.scad");
+}
 #[test]
-fn openscad_old_example007() { assert_example_no_panic("Old/example007.scad"); }
+fn openscad_old_example007() {
+    assert_example_no_panic("Old/example007.scad");
+}
 #[test]
-fn openscad_old_example008() { assert_example_no_panic("Old/example008.scad"); }
+fn openscad_old_example008() {
+    assert_example_no_panic("Old/example008.scad");
+}
 #[test]
-fn openscad_old_example009() { assert_example_no_panic("Old/example009.scad"); }
+fn openscad_old_example009() {
+    assert_example_no_panic("Old/example009.scad");
+}
 #[test]
-fn openscad_old_example010() { assert_example_no_panic("Old/example010.scad"); }
+fn openscad_old_example010() {
+    assert_example_no_panic("Old/example010.scad");
+}
 #[test]
-fn openscad_old_example011() { assert_example_matches_reference("Old/example011.scad"); }
+fn openscad_old_example011() {
+    assert_example_matches_reference("Old/example011.scad");
+}
 #[test]
-fn openscad_old_example012() { assert_example_matches_reference("Old/example012.scad"); }
+fn openscad_old_example012() {
+    assert_example_matches_reference("Old/example012.scad");
+}
 #[test]
-fn openscad_old_example013() { assert_example_no_panic("Old/example013.scad"); }
+fn openscad_old_example013() {
+    assert_example_no_panic("Old/example013.scad");
+}
 #[test]
-fn openscad_old_example014() { assert_example_compiles("Old/example014.scad"); }
+fn openscad_old_example014() {
+    assert_example_compiles("Old/example014.scad");
+}
 #[test]
-fn openscad_old_example015() { assert_example_no_panic("Old/example015.scad"); }
+fn openscad_old_example015() {
+    assert_example_no_panic("Old/example015.scad");
+}
 #[test]
-fn openscad_old_example016() { assert_example_matches_reference_loose("Old/example016.scad"); }
+fn openscad_old_example016() {
+    assert_example_matches_reference_loose("Old/example016.scad");
+}
 #[test]
-fn openscad_old_example018() { assert_example_compiles("Old/example018.scad"); }
+fn openscad_old_example018() {
+    assert_example_compiles("Old/example018.scad");
+}
 #[test]
-fn openscad_old_example019() { assert_example_matches_reference("Old/example019.scad"); }
+fn openscad_old_example019() {
+    assert_example_matches_reference("Old/example019.scad");
+}
 #[test]
-fn openscad_old_example021() { assert_example_compiles("Old/example021.scad"); }
+fn openscad_old_example021() {
+    assert_example_compiles("Old/example021.scad");
+}
 #[test]
-fn openscad_old_example022() { assert_example_matches_reference_loose("Old/example022.scad"); }
+fn openscad_old_example022() {
+    assert_example_matches_reference_loose("Old/example022.scad");
+}
 #[test]
-fn openscad_old_example023() { assert_example_no_panic("Old/example023.scad"); }
+fn openscad_old_example023() {
+    assert_example_no_panic("Old/example023.scad");
+}
 #[test]
-fn openscad_old_example024() { assert_example_matches_reference("Old/example024.scad"); }
+fn openscad_old_example024() {
+    assert_example_matches_reference("Old/example024.scad");
+}
 fn assert_example_matches_reference_very_loose(relative: &str) {
     let path = example_path(relative);
     let code = std::fs::read_to_string(&path).unwrap();
@@ -781,7 +915,10 @@ fn assert_example_matches_reference_very_loose(relative: &str) {
         CompilationResult::Canceled => panic!("Compilation was unexpectedly canceled"),
     };
     let ref_name = relative.replace(".scad", ".json");
-    let ref_path = format!("{}/tests/openscad_references/{ref_name}", env!("CARGO_MANIFEST_DIR"));
+    let ref_path = format!(
+        "{}/tests/openscad_references/{ref_name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
     let ref_json = match std::fs::read_to_string(&ref_path) {
         Ok(json) => json,
         Err(_) => return,
@@ -791,11 +928,17 @@ fn assert_example_matches_reference_very_loose(relative: &str) {
 }
 
 #[test]
-fn openscad_parametric_candlestand() { assert_example_matches_reference_very_loose("Parametric/candleStand.scad"); }
+fn openscad_parametric_candlestand() {
+    assert_example_matches_reference_very_loose("Parametric/candleStand.scad");
+}
 #[test]
-fn openscad_parametric_sign() { assert_example_matches_reference_very_loose("Parametric/sign.scad"); }
+fn openscad_parametric_sign() {
+    assert_example_matches_reference_very_loose("Parametric/sign.scad");
+}
 #[test]
-fn openscad_basics_dodecahedron_difference() { assert_example_matches_reference("Basics/dodecahedron_difference.scad"); }
+fn openscad_basics_dodecahedron_difference() {
+    assert_example_matches_reference("Basics/dodecahedron_difference.scad");
+}
 
 fn dodecahedron_scad() -> &'static str {
     r#"
@@ -818,7 +961,10 @@ fn dodecahedron_scad() -> &'static str {
 
 #[test]
 fn test_polyhedron_pentagon_faces_standalone() {
-    let code = format!("{} polyhedron(points=points, faces=faces);", dodecahedron_scad());
+    let code = format!(
+        "{} polyhedron(points=points, faces=faces);",
+        dodecahedron_scad()
+    );
     match compile_with_timeout(&code, 0) {
         CompilationResult::Success { parts, .. } => {
             assert!(!parts.is_empty());
@@ -834,7 +980,9 @@ fn test_polyhedron_pentagon_faces_standalone() {
 fn test_cone_zero_r1() {
     let code = "cylinder(h=5, r1=0, r2=10, $fn=12);";
     match compile_with_timeout(code, 0) {
-        CompilationResult::Success { parts, .. } => { assert!(!parts.is_empty()); }
+        CompilationResult::Success { parts, .. } => {
+            assert!(!parts.is_empty());
+        }
         CompilationResult::Error(e) => panic!("compilation failed: {e}"),
         CompilationResult::Canceled => panic!("Compilation was unexpectedly canceled"),
     }

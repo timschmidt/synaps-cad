@@ -1,5 +1,5 @@
-use openscad_rs::ast::{Expr, ExprKind, UnaryOp, BinaryOp};
-use super::{Evaluator, Value, UserFunction};
+use super::{Evaluator, UserFunction, Value};
+use openscad_rs::ast::{BinaryOp, Expr, ExprKind, UnaryOp};
 
 impl Evaluator {
     pub fn eval_expr(&mut self, expr: &Expr) -> Value {

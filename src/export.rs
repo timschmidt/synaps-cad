@@ -182,20 +182,31 @@ fn export_obj(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
                 welded_pos[tri[2] as usize],
                 welded_pos[tri[1] as usize],
             ];
-            let edge1 = [verts[1][0] - verts[0][0], verts[1][1] - verts[0][1], verts[1][2] - verts[0][2]];
-            let edge2 = [verts[2][0] - verts[0][0], verts[2][1] - verts[0][1], verts[2][2] - verts[0][2]];
+            let edge1 = [
+                verts[1][0] - verts[0][0],
+                verts[1][1] - verts[0][1],
+                verts[1][2] - verts[0][2],
+            ];
+            let edge2 = [
+                verts[2][0] - verts[0][0],
+                verts[2][1] - verts[0][1],
+                verts[2][2] - verts[0][2],
+            ];
             let cross = [
                 edge1[1].mul_add(edge2[2], -(edge1[2] * edge2[1])),
                 edge1[2].mul_add(edge2[0], -(edge1[0] * edge2[2])),
                 edge1[0].mul_add(edge2[1], -(edge1[1] * edge2[0])),
             ];
-            let len = cross[2].mul_add(cross[2], cross[0].mul_add(cross[0], cross[1] * cross[1])).sqrt();
+            let len = cross[2]
+                .mul_add(cross[2], cross[0].mul_add(cross[0], cross[1] * cross[1]))
+                .sqrt();
             let normal = if len > 0.0 {
                 [cross[0] / len, cross[1] / len, cross[2] / len]
             } else {
                 [0.0, 0.0, 1.0]
             };
-            writeln!(obj, "vn {} {} {}", normal[0], normal[1], normal[2]).map_err(|e| e.to_string())?;
+            writeln!(obj, "vn {} {} {}", normal[0], normal[1], normal[2])
+                .map_err(|e| e.to_string())?;
         }
 
         // Write faces (swap v1/v2 for CCW winding)
@@ -218,6 +229,7 @@ fn export_obj(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
 }
 
 /// 3MF export (with per-part colors via `ColorGroup`).
+#[cfg(not(target_arch = "wasm32"))]
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
     use lib3mf::{BuildItem, Mesh, Model, Object, Triangle, Vertex};
@@ -253,9 +265,7 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
     // Add color group if we have any colors
     let has_colors = !colors.is_empty();
     if has_colors {
-        model
-            .required_extensions
-            .push(lib3mf::Extension::Material);
+        model.required_extensions.push(lib3mf::Extension::Material);
         let cg = lib3mf::ColorGroup {
             id: color_group_id,
             colors,
@@ -325,4 +335,9 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
         .map_err(|e| format!("Failed to write 3MF: {e}"))?;
 
     Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn export_3mf(_parts: &[StlMeshData], _path: &Path) -> Result<(), String> {
+    Err("3MF export is not available in the web build.".into())
 }

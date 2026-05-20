@@ -4,7 +4,9 @@ use bevy::prelude::*;
 use bevy::render::mesh::MeshAabb;
 use bevy_egui::{EguiContexts, egui};
 
-use super::scene::{CadModel, CurrentGridSize, GizmoVisibility, LabelVisibility, MainCamera, ViewportGizmo};
+use super::scene::{
+    CadModel, CurrentGridSize, GizmoVisibility, LabelVisibility, MainCamera, ViewportGizmo,
+};
 use super::ui::OccupiedScreenSpace;
 
 pub struct CameraPlugin;

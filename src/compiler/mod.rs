@@ -1,18 +1,22 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-pub mod types;
+pub mod evaluator;
 pub mod geometry;
 pub mod rendering;
-pub mod evaluator;
+pub mod types;
 
-pub use types::{MeshData, ViewImage, CompilationResult};
-pub use rendering::render_orthographic_views;
 pub use evaluator::Evaluator;
+pub use rendering::render_orthographic_views;
+pub use types::{CompilationResult, MeshData, ViewImage};
 
 /// Full compilation pipeline: parse → evaluate → mesh conversion → rendering.
-#[must_use] 
-pub fn compile_scad_code(code: &str, fn_override: u32, cancel: Option<Arc<AtomicBool>>) -> CompilationResult {
+#[must_use]
+pub fn compile_scad_code(
+    code: &str,
+    fn_override: u32,
+    cancel: Option<Arc<AtomicBool>>,
+) -> CompilationResult {
     let source_file = match openscad_rs::parse(code) {
         Ok(f) => f,
         Err(e) => return CompilationResult::Error(format!("Parse error: {e}")),
@@ -22,7 +26,10 @@ pub fn compile_scad_code(code: &str, fn_override: u32, cancel: Option<Arc<Atomic
     evaluator.cancel.clone_from(&cancel);
 
     if fn_override > 0 {
-        evaluator.variables.insert("$fn".into(), evaluator::value::Value::Number(f64::from(fn_override)));
+        evaluator.variables.insert(
+            "$fn".into(),
+            evaluator::value::Value::Number(f64::from(fn_override)),
+        );
     }
     let shapes = evaluator.eval_source_file(&source_file);
 
@@ -36,10 +43,12 @@ pub fn compile_scad_code(code: &str, fn_override: u32, cancel: Option<Arc<Atomic
             return CompilationResult::Canceled;
         }
         let mut mesh_data = match shape {
-            geometry::Shape::Mesh3D(bmesh) => match geometry::conversions::bmesh_to_mesh_data(&bmesh) {
-                Ok(m) => m,
-                Err(_) => continue,
-            },
+            geometry::Shape::Mesh3D(bmesh) => {
+                match geometry::conversions::bmesh_to_mesh_data(&bmesh) {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                }
+            }
             geometry::Shape::Sketch2D(sketch) => {
                 // 2D shapes that weren't extruded are rendered as thin 3D meshes
                 match geometry::conversions::csg_mesh_to_mesh_data(&sketch.extrude(0.01)) {
@@ -47,10 +56,12 @@ pub fn compile_scad_code(code: &str, fn_override: u32, cancel: Option<Arc<Atomic
                     Err(_) => continue,
                 }
             }
-            geometry::Shape::FallbackMesh(csg) => match geometry::conversions::csg_mesh_to_mesh_data(&csg) {
-                Ok(m) => m,
-                Err(_) => continue,
-            },
+            geometry::Shape::FallbackMesh(csg) => {
+                match geometry::conversions::csg_mesh_to_mesh_data(&csg) {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                }
+            }
             geometry::Shape::Failed(e) => {
                 evaluator.warnings.push(format!("Geometry failed: {e}"));
                 continue;

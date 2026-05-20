@@ -1,14 +1,16 @@
+use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
 use csgrs::polygon::Polygon;
 use csgrs::sketch::Sketch;
 use csgrs::vertex::Vertex;
-use csgrs::csg::CSG;
-use nalgebra::Vector3;
 use nalgebra::Point3;
+use nalgebra::Vector3;
 
 use super::{Evaluator, Value};
 use crate::compiler::geometry::Shape;
-use crate::compiler::rendering::fonts::{resolve_font_data, apply_text_alignment, render_text_with_direction};
+use crate::compiler::rendering::fonts::{
+    apply_text_alignment, render_text_with_direction, resolve_font_data,
+};
 
 impl Evaluator {
     // =======================================================================
@@ -45,7 +47,7 @@ impl Evaluator {
         Some(Shape::from_csg_mesh(mesh))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn eval_sphere(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
         let r = Self::get_arg_number(args, "r", 0)
             .or_else(|| Self::get_arg_number(args, "d", 0).map(|d| d / 2.0))
@@ -59,7 +61,7 @@ impl Evaluator {
         )))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn eval_cylinder(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
         let h = Self::get_arg_number(args, "h", 0)
             .or_else(|| Self::get_arg_number(args, "height", 0))
@@ -91,7 +93,12 @@ impl Evaluator {
         Some(Shape::from_csg_mesh(m))
     }
 
-    #[allow(clippy::unused_self, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::missing_panics_doc)]
+    #[allow(
+        clippy::unused_self,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::missing_panics_doc
+    )]
     #[must_use]
     pub fn eval_polyhedron(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
         let points_val = Self::get_arg(args, "points", 0)?;
@@ -193,7 +200,7 @@ impl Evaluator {
     // 2D Primitives
     // =======================================================================
 
-    #[must_use] 
+    #[must_use]
     pub fn eval_circle(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
         let r = Self::get_arg_number(args, "r", 0)
             .or_else(|| Self::get_arg_number(args, "d", 0).map(|d| d / 2.0))
@@ -224,7 +231,7 @@ impl Evaluator {
     }
 
     #[allow(clippy::unused_self)]
-    #[must_use] 
+    #[must_use]
     pub fn eval_polygon(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
         let points_val = Self::get_arg(args, "points", 0)?;
         let points: Vec<[f64; 2]> = points_val
@@ -246,7 +253,7 @@ impl Evaluator {
         Some(Shape::Sketch2D(Sketch::polygon(&points, None)))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn eval_text(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
         // text(t, size, font, halign, valign, spacing, direction, language, script, $fn)
         let text_str = match Self::get_arg(args, "text", 0) {
@@ -274,7 +281,8 @@ impl Evaluator {
             _ => "ltr".to_string(),
         };
 
-        let sketch = render_text_with_direction(&text_str, &font_data, size, spacing_val, &direction);
+        let sketch =
+            render_text_with_direction(&text_str, &font_data, size, spacing_val, &direction);
 
         // Apply horizontal alignment (default "left" = no offset)
         let halign = match Self::get_arg(args, "halign", 3) {

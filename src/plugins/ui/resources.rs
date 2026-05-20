@@ -1,7 +1,7 @@
+use crate::export::ExportFormat;
 use bevy::prelude::*;
 use bevy_egui::egui;
 use std::sync::{Mutex, mpsc};
-use crate::export::ExportFormat;
 
 #[derive(Resource, Default)]
 pub struct OccupiedScreenSpace {
@@ -42,14 +42,14 @@ impl PerformanceMonitor {
             self.frame_times.remove(0);
         }
         self.frame_count += 1;
-        
+
         // Update system stats every 60 frames (~1 second)
         if self.frame_count >= 60 {
             self.update_system_stats();
             self.frame_count = 0;
         }
     }
-    
+
     #[allow(clippy::cast_precision_loss)]
     fn update_system_stats(&mut self) {
         // Note: Cross-platform CPU usage monitoring would require additional dependencies
@@ -59,16 +59,16 @@ impl PerformanceMonitor {
         } else {
             self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32
         };
-        
+
         // Rough estimation: high frame times suggest high CPU usage
         // This is a simplified metric for debugging purposes
         self.cpu_usage = (avg_frame_time / 16.67 * 100.0).min(100.0);
-        
+
         // Memory usage would also need platform-specific implementation
         // For debugging, we'll track allocation pressure indirectly
         self.memory_usage = 0.0; // Placeholder
     }
-    
+
     #[allow(clippy::cast_precision_loss)]
     pub fn average_frame_time(&self) -> f32 {
         if self.frame_times.is_empty() {
@@ -77,7 +77,7 @@ impl PerformanceMonitor {
             self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32
         }
     }
-    
+
     pub fn current_fps(&self) -> f32 {
         let avg_frame_time = self.average_frame_time();
         if avg_frame_time > 0.0 {
@@ -102,10 +102,8 @@ pub struct ImagePreviewState {
 }
 
 /// Whether the AI settings dialog window is open.
-#[derive(Resource)]
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct SettingsDialogOpen(pub bool);
-
 
 #[derive(Resource, Default)]
 pub struct CheatsheetOpen(pub bool);

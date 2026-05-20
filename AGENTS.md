@@ -6,14 +6,14 @@ This document describes the SynapsCAD architecture for AI agents (LLMs, copilots
 
 ## System Architecture
 
-SynapsCAD is a single-binary Rust desktop app built on **Bevy 0.15** (ECS game engine) with **egui** for UI.
+SynapsCAD is a single-binary Rust app built on **Bevy 0.15** (ECS game engine) with **egui** for UI. It targets native desktop by default and also supports a browser/WASM build for GitHub Pages.
 
 ### Data Flow
 
 ```
 SynapsCAD code (editor)
     ↓  trigger_compilation_system
-Compiler thread (scad-rs parser → AST evaluator → csgrs CSG → boolmesh)
+Compiler thread on native / main thread on WASM (scad-rs parser → AST evaluator → csgrs CSG → boolmesh)
     ↓  mpsc channel
 poll_compilation_system
     ↓  spawns Bevy entities
@@ -45,6 +45,8 @@ Code Editor (auto-apply)
 | `src/compiler/`     | OpenSCAD → triangle mesh pipeline. Modular directory handling evaluation, geometry, rendering, and types.                    |
 | `src/main.rs`       | App entry point, registers all plugins                                                                                      |
 | `src/app_config.rs` | Developer constants (not user-facing)                                                                                       |
+| `web/index.html`    | Static HTML shell for the WASM build                                                                                        |
+| `.github/workflows/pages.yml` | Builds the WASM target, runs `wasm-bindgen`, and deploys the static bundle to GitHub Pages                       |
 
 ## Labels (`@N`)
 
@@ -158,6 +160,21 @@ cargo run          # launch the app
 cargo test         # run all tests
 cargo clippy       # lint
 ```
+
+### WASM / GitHub Pages
+
+The browser build uses `wasm32-unknown-unknown` with target-specific Cargo config in `.cargo/config.toml` for `getrandom`'s `wasm_js` backend. Native-only dependencies are target-gated in `Cargo.toml`.
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.112 --locked
+cargo build --release --target wasm32-unknown-unknown
+wasm-bindgen --target web --out-dir dist/pkg --out-name synaps_cad target/wasm32-unknown-unknown/release/synaps-cad.wasm
+cp web/index.html dist/index.html
+touch dist/.nojekyll
+```
+
+The WASM build currently disables native integrations: AI networking (`genai`/Tokio/reqwest), persistence (`dirs`/filesystem session storage), file dialogs, clipboard image access, model export, and opening external issue URLs. Compilation runs synchronously on the main thread in WASM because standard native threads are unavailable.
 
 ### Testing Philosophy
 

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
-use std::sync::{Mutex, mpsc, Arc};
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex, mpsc};
 
 use super::ai_chat::{ChatMessage, VerificationState};
 use super::camera::OrbitCamera;
@@ -199,22 +199,36 @@ fn trigger_compilation_system(
     let (tx, rx) = mpsc::channel();
     compilation_state.result_receiver = Some(Mutex::new(rx));
 
-    let cancel = Arc::new(AtomicBool::new(false));
-    compilation_state.cancel_signal = Some(cancel.clone());
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let cancel = Arc::new(AtomicBool::new(false));
+        compilation_state.cancel_signal = Some(cancel.clone());
 
-    // Use a larger stack (64 MB) for the compilation thread because complex
-    // OpenSCAD models with deep nesting (hull, difference, nested modules)
-    // can overflow the default 8 MB stack.
-    std::thread::Builder::new()
-        .stack_size(64 * 1024 * 1024)
-        .spawn(move || {
-            let result = compile_openscad(&code, fn_value, Some(cancel));
-            let _ = tx.send(result);
-        })
-        .expect("Failed to spawn compilation thread");
+        // Use a larger stack (64 MB) for the compilation thread because complex
+        // OpenSCAD models with deep nesting (hull, difference, nested modules)
+        // can overflow the default 8 MB stack.
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(move || {
+                let result = compile_openscad(&code, fn_value, Some(cancel));
+                let _ = tx.send(result);
+            })
+            .expect("Failed to spawn compilation thread");
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        compilation_state.cancel_signal = None;
+        let result = compile_openscad(&code, fn_value, None);
+        let _ = tx.send(result);
+    }
 }
 
-fn compile_openscad(code: &str, fn_value: u32, cancel: Option<Arc<AtomicBool>>) -> CompilationResult {
+fn compile_openscad(
+    code: &str,
+    fn_value: u32,
+    cancel: Option<Arc<AtomicBool>>,
+) -> CompilationResult {
     use super::code_editor::{detect_views, set_active_view};
 
     // Empty code → clear the viewport (no error, just zero parts)
@@ -285,12 +299,16 @@ fn compile_openscad(code: &str, fn_value: u32, cancel: Option<Arc<AtomicBool>>) 
                     let mut alt_code = code.to_string();
                     if set_active_view(&mut alt_code, view_name)
                         && let Ok(alt_views) = compiler::compile_views_only(&alt_code)
-                            && !alt_views.is_empty() {
-                                other_views.push((
-                                    view_name.clone(),
-                                    alt_views.into_iter().map(|v| (v.label, v.base64_png)).collect(),
-                                ));
-                            }
+                        && !alt_views.is_empty()
+                    {
+                        other_views.push((
+                            view_name.clone(),
+                            alt_views
+                                .into_iter()
+                                .map(|v| (v.label, v.base64_png))
+                                .collect(),
+                        ));
+                    }
                 }
                 if !other_views.is_empty() {
                     eprintln!(
@@ -352,7 +370,7 @@ fn poll_compilation_system(
     if !polling_timer.timer.tick(time.delta()).just_finished() {
         return;
     }
-    
+
     let result = {
         let Some(ref rx_mutex) = compilation_state.result_receiver else {
             return;

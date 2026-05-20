@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#181824" />
+    <title>SynapsCAD</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #181824;
+      }
+
+      #synaps-cad {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        touch-action: none;
+      }
+
+      .boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        color: #dcdce6;
+        font: 16px system-ui, sans-serif;
+        background: #181824;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="synaps-cad"></canvas>
+    <div class="boot" id="boot">Loading SynapsCAD...</div>
+    <script type="module">
+      import init from "./pkg/synaps_cad.js";
+
+      const boot = document.getElementById("boot");
+      try {
+        await init();
+        boot.remove();
+      } catch (error) {
+        console.error(error);
+        boot.textContent = "Failed to load SynapsCAD. Check the browser console for details.";
+      }
+    </script>
+  </body>
+</html>

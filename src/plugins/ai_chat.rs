@@ -141,12 +141,12 @@ pub fn normalize_custom_url(adapter: &str, raw_url: &str) -> String {
         normalized.push('/');
     }
 
-    let Ok(mut parsed) = reqwest::Url::parse(&normalized) else {
+    let Ok(mut parsed) = url::Url::parse(&normalized) else {
         return normalized;
     };
 
     if parsed.path() == "/"
-        && let Ok(default_url) = reqwest::Url::parse(default_placeholder_url(adapter))
+        && let Ok(default_url) = url::Url::parse(default_placeholder_url(adapter))
     {
         let default_path = default_url.path();
         if !default_path.is_empty() && default_path != "/" {
@@ -190,9 +190,7 @@ impl AiConfig {
 
     /// Get a mutable reference to the API key for the currently selected adapter.
     pub fn api_key_mut(&mut self) -> &mut String {
-        self.api_keys
-            .entry(self.adapter_name.clone())
-            .or_default()
+        self.api_keys.entry(self.adapter_name.clone()).or_default()
     }
 
     /// Get the custom endpoint URL for the currently selected adapter.
@@ -213,7 +211,10 @@ impl AiConfig {
 impl Default for AiConfig {
     fn default() -> Self {
         let mut custom_urls = std::collections::HashMap::new();
+        #[cfg(not(target_arch = "wasm32"))]
         let ollama_host = std::env::var("OLLAMA_HOST").unwrap_or_default();
+        #[cfg(target_arch = "wasm32")]
+        let ollama_host = option_env!("OLLAMA_HOST").unwrap_or_default().to_string();
         if !ollama_host.is_empty() {
             let mut host = ollama_host;
             if !host.ends_with('/') {
@@ -385,39 +386,60 @@ pub enum VerificationState {
     ErrorRecovery(String),
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Resource)]
 pub struct TokioRuntime(pub tokio::runtime::Runtime);
 
+#[cfg(target_arch = "wasm32")]
+#[derive(Resource, Default)]
+pub struct TokioRuntime;
+
+pub const fn ai_networking_available() -> bool {
+    !cfg!(target_arch = "wasm32")
+}
+
 impl Plugin for AiChatPlugin {
     fn build(&self, app: &mut App) {
-        let tokio_rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-        app.init_resource::<AiConfig>()
-            .init_resource::<ChatState>()
-            .init_resource::<AvailableModels>()
-            .insert_resource(TokioRuntime(tokio_rt))
-            .add_systems(
-                Update,
-                (
-                    fetch_models_system.run_if(
-                        // Run when: loading, polling results, explicitly triggered,
-                        // or on first frame (last_adapter empty → needs initial fetch)
-                        |available: Res<AvailableModels>| {
-                            available.loading
-                                || available.receiver.is_some()
-                                || available.force_reload
-                                || available.last_adapter.is_empty()
-                        }
-                    ),
-                    ai_send_system,
-                    ai_receive_system,
-                    ai_verify_system,
-                )
-                    .chain(),
-            );
+        #[cfg(target_arch = "wasm32")]
+        {
+            app.init_resource::<AiConfig>()
+                .init_resource::<ChatState>()
+                .init_resource::<AvailableModels>()
+                .init_resource::<TokioRuntime>();
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let tokio_rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+            app.init_resource::<AiConfig>()
+                .init_resource::<ChatState>()
+                .init_resource::<AvailableModels>()
+                .insert_resource(TokioRuntime(tokio_rt))
+                .add_systems(
+                    Update,
+                    (
+                        fetch_models_system.run_if(
+                            // Run when: loading, polling results, explicitly triggered,
+                            // or on first frame (last_adapter empty → needs initial fetch)
+                            |available: Res<AvailableModels>| {
+                                available.loading
+                                    || available.receiver.is_some()
+                                    || available.force_reload
+                                    || available.last_adapter.is_empty()
+                            },
+                        ),
+                        ai_send_system,
+                        ai_receive_system,
+                        ai_verify_system,
+                    )
+                        .chain(),
+                );
+        }
     }
 }
 
 /// Fetch model names when adapter selection changes.
+#[cfg(not(target_arch = "wasm32"))]
 fn fetch_models_system(
     mut ai_config: ResMut<AiConfig>,
     mut available: ResMut<AvailableModels>,
@@ -472,7 +494,12 @@ fn fetch_models_system(
     let url_changed = available.last_custom_url != current_url;
     let force_reload = available.force_reload;
     available.force_reload = false;
-    if (force_reload || available.last_adapter != ai_config.adapter_name || key_changed || url_changed) && !available.loading {
+    if (force_reload
+        || available.last_adapter != ai_config.adapter_name
+        || key_changed
+        || url_changed)
+        && !available.loading
+    {
         // Clear stale models immediately so the UI doesn't show old data
         available.models.clear();
         // Save current model name to restore after fetch if it's still valid
@@ -502,6 +529,7 @@ fn fetch_models_system(
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 async fn fetch_model_names(
     adapter_name: &str,
     api_key: Option<&str>,
@@ -541,11 +569,19 @@ async fn fetch_model_names(
         {
             request = request.header("Authorization", format!("Bearer {key}"));
         }
-        let response = request.send().await.map_err(|e| format!("Failed to fetch Ollama models: {e}"))?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch Ollama models: {e}"))?;
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            return Err("Unauthorized (401). Please check your API key for this Ollama host.".into());
+            return Err(
+                "Unauthorized (401). Please check your API key for this Ollama host.".into(),
+            );
         }
-        let body: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse Ollama models: {e}"))?;
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Ollama models: {e}"))?;
 
         let mut models = Vec::new();
         if let Some(models_value) = body.get("models").and_then(|m| m.as_array()) {
@@ -568,11 +604,17 @@ async fn fetch_model_names(
         {
             request = request.header("Authorization", format!("Bearer {key}"));
         }
-        let response = request.send().await.map_err(|e| format!("Failed to fetch models from custom endpoint: {e}"))?;
+        let response = request
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch models from custom endpoint: {e}"))?;
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             return Err("Unauthorized (401). Please check your API key.".into());
         }
-        let body: serde_json::Value = response.json().await.map_err(|e| format!("Failed to parse models response: {e}"))?;
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse models response: {e}"))?;
 
         let mut models = Vec::new();
         // Try OpenAI-compatible format: { "data": [{"id": "model-name"}, ...] }
@@ -594,7 +636,10 @@ async fn fetch_model_names(
             }
         }
         if models.is_empty() {
-            return Err("No models returned from custom endpoint. You can type the model name manually.".into());
+            return Err(
+                "No models returned from custom endpoint. You can type the model name manually."
+                    .into(),
+            );
         }
         return Ok(models);
     }
@@ -614,7 +659,7 @@ async fn fetch_model_names(
     }
 }
 
-
+#[cfg(not(target_arch = "wasm32"))]
 fn ai_send_system(
     mut chat_state: ResMut<ChatState>,
     runtime: Res<TokioRuntime>,
@@ -692,6 +737,7 @@ fn ai_send_system(
 }
 
 #[allow(clippy::too_many_arguments, clippy::cognitive_complexity)]
+#[cfg(not(target_arch = "wasm32"))]
 async fn run_ai_stream(
     messages: Vec<ChatMessage>,
     current_code: String,
@@ -744,15 +790,17 @@ async fn run_ai_stream(
             builder = builder.with_auth_resolver_fn(move |_| Ok(Some(AuthData::Key(key.clone()))));
         }
         if needs_resolver {
-            builder = builder.with_service_target_resolver_fn(move |mut service_target: ServiceTarget| {
-                if let Some(adapter_kind) = user_adapter_kind {
-                    service_target.model.adapter_kind = adapter_kind;
-                }
-                if !custom_url_clone.is_empty() {
-                    service_target.endpoint = Endpoint::from_owned(custom_url_clone.clone());
-                }
-                Ok(service_target)
-            });
+            builder = builder.with_service_target_resolver_fn(
+                move |mut service_target: ServiceTarget| {
+                    if let Some(adapter_kind) = user_adapter_kind {
+                        service_target.model.adapter_kind = adapter_kind;
+                    }
+                    if !custom_url_clone.is_empty() {
+                        service_target.endpoint = Endpoint::from_owned(custom_url_clone.clone());
+                    }
+                    Ok(service_target)
+                },
+            );
         }
         builder.build()
     } else {
@@ -767,13 +815,19 @@ async fn run_ai_stream(
     }
 
     if cfg!(debug_assertions) {
-        eprintln!("[DEBUG] --- Full system prompt ({} chars) ---", system_prompt.len());
+        eprintln!(
+            "[DEBUG] --- Full system prompt ({} chars) ---",
+            system_prompt.len()
+        );
         eprintln!("{system_prompt}");
         eprintln!("[DEBUG] --- Chat messages ({} total) ---", messages.len());
         for (i, msg) in messages.iter().enumerate() {
             let preview: String = msg.content.chars().take(200).collect();
             let error_tag = if msg.is_error { " [ERROR-UI-ONLY]" } else { "" };
-            eprintln!("[DEBUG]   [{i}] {} (auto={}){error_tag}: {preview}", msg.role, msg.auto_generated);
+            eprintln!(
+                "[DEBUG]   [{i}] {} (auto={}){error_tag}: {preview}",
+                msg.role, msg.auto_generated
+            );
         }
         eprintln!("[DEBUG] Views: {}", views.len());
         eprintln!("[DEBUG] ---");
@@ -800,9 +854,8 @@ async fn run_ai_stream(
                             Some(img.filename.clone()),
                         ));
                     }
-                    chat_req = chat_req.append_message(GenaiMessage::user(
-                        MessageContent::from_parts(parts),
-                    ));
+                    chat_req = chat_req
+                        .append_message(GenaiMessage::user(MessageContent::from_parts(parts)));
                 }
             }
             "assistant" => {
@@ -854,7 +907,9 @@ async fn run_ai_stream(
                             let path = tmp_dir.join(format!("{label}_view.png"));
                             match std::fs::write(&path, &bytes) {
                                 Ok(()) => eprintln!("[DEBUG] Saved view image: {}", path.display()),
-                                Err(e) => eprintln!("[DEBUG] Failed to write {}: {e}", path.display()),
+                                Err(e) => {
+                                    eprintln!("[DEBUG] Failed to write {}: {e}", path.display());
+                                }
                             }
                         }
                         Err(e) => eprintln!("[DEBUG] Failed to decode {label} base64: {e}"),
@@ -867,9 +922,9 @@ async fn run_ai_stream(
     // Attach views from other $view branches (smaller resolution)
     if !other_views.is_empty() {
         for (view_name, view_images) in other_views {
-            let mut parts = vec![ContentPart::from_text(
-                format!("Rendered views for $view \"{view_name}\":"),
-            )];
+            let mut parts = vec![ContentPart::from_text(format!(
+                "Rendered views for $view \"{view_name}\":"
+            ))];
             for (label, base64_png) in view_images {
                 if !base64_png.is_empty() {
                     parts.push(ContentPart::from_text(format!("{label}:")));
@@ -899,7 +954,11 @@ async fn run_ai_stream(
 
     // Claude's API requires temperature=1 when extended thinking is enabled.
     let is_claude = model_name.contains("claude");
-    let effective_temperature = if extended_thinking && is_claude { 1.0 } else { temperature };
+    let effective_temperature = if extended_thinking && is_claude {
+        1.0
+    } else {
+        temperature
+    };
 
     let mut chat_options = ChatOptions::default()
         .with_temperature(effective_temperature)
@@ -979,7 +1038,10 @@ async fn run_ai_stream(
 
     if cfg!(debug_assertions) {
         let preview: String = full_content.chars().take(500).collect();
-        eprintln!("[DEBUG] AI response ({} chars): {preview}", full_content.len());
+        eprintln!(
+            "[DEBUG] AI response ({} chars): {preview}",
+            full_content.len()
+        );
         if let Some(ref r) = full_reasoning {
             eprintln!("[DEBUG] AI reasoning ({} chars)", r.len());
         }
@@ -1041,7 +1103,12 @@ fn ai_receive_system(
                     .last()
                     .is_some_and(|m| m.role == "assistant" && !m.is_error);
                 if append {
-                    chat_state.messages.last_mut().unwrap().content.push_str(&text);
+                    chat_state
+                        .messages
+                        .last_mut()
+                        .unwrap()
+                        .content
+                        .push_str(&text);
                 } else {
                     chat_state.messages.push(ChatMessage {
                         role: "assistant".into(),
@@ -1180,11 +1247,8 @@ fn ai_verify_system(
     ai_config: Res<AiConfig>,
 ) {
     match &chat_state.verification {
-        VerificationState::WaitingForCompilation => {
-            // Wait until compilation finishes
-            if !compilation_state.is_compiling {
-                chat_state.verification = VerificationState::ReadyToVerify;
-            }
+        VerificationState::WaitingForCompilation if !compilation_state.is_compiling => {
+            chat_state.verification = VerificationState::ReadyToVerify;
         }
         VerificationState::ReadyToVerify => {
             // Determine which round this will be
@@ -1302,14 +1366,18 @@ fn parse_search_replace(text: &str) -> Vec<(String, String)> {
         };
 
         // Find the separator ===
-        let Some(separator) = after_newline.find("\n===\n") else { break; };
+        let Some(separator) = after_newline.find("\n===\n") else {
+            break;
+        };
 
         let old_str = &after_newline[..separator];
 
         let after_sep = &after_newline[separator + "\n===\n".len()..];
 
         // Find closing >>>
-        let Some(end) = after_sep.find("\n>>>") else { break; };
+        let Some(end) = after_sep.find("\n>>>") else {
+            break;
+        };
 
         let new_str = &after_sep[..end];
 
@@ -1352,7 +1420,7 @@ fn apply_search_replace(code: &str, replacements: &[(String, String)]) -> Result
 fn extract_openscad_code(text: &str) -> Option<String> {
     // Try both markers
     let markers = ["```synapscad", "```openscad"];
-    
+
     for marker in &markers {
         if let Some(start) = text.find(marker) {
             let rest = &text[start + marker.len()..];
@@ -1367,7 +1435,7 @@ fn extract_openscad_code(text: &str) -> Option<String> {
             }
         }
     }
-    
+
     None
 }
 
@@ -1401,7 +1469,10 @@ mod tests {
         let pairs = parse_search_replace(text);
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0].0, "module foo() {\n    cube(10);\n}");
-        assert_eq!(pairs[0].1, "module foo() {\n    cube(20);\n    sphere(5);\n}");
+        assert_eq!(
+            pairs[0].1,
+            "module foo() {\n    cube(20);\n    sphere(5);\n}"
+        );
     }
 
     #[test]

@@ -1,10 +1,10 @@
-use std::collections::{HashMap, HashSet};
 use csgrs::bmesh::BMesh;
+use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
 use csgrs::polygon::Polygon;
-use csgrs::csg::CSG;
 use csgrs::triangulated::Triangulated3D;
 use nalgebra::Point3;
+use std::collections::{HashMap, HashSet};
 
 use crate::compiler::types::MeshData;
 
@@ -103,9 +103,10 @@ pub fn csg_mesh_to_bmesh(mesh: &CsgMesh<()>) -> Result<BMesh<()>, String> {
         }
     }
     if clean_tris.len() != tris.len()
-        && let Ok(bmesh) = try_manifold(&verts, &clean_tris) {
-            return Ok(bmesh);
-        }
+        && let Ok(bmesh) = try_manifold(&verts, &clean_tris)
+    {
+        return Ok(bmesh);
+    }
 
     eprintln!("[SynapsCAD] Warning: Non-manifold mesh, all repair attempts failed");
     Err("Non-manifold mesh: boolean operation produced geometry that could not be repaired. Please report this bug with the code that caused it.".into())
@@ -239,7 +240,7 @@ pub fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
 
 /// Convert axis-angle rotation (angle in degrees, axis [ax,ay,az]) to Euler angles [rx,ry,rz] in degrees.
 /// Uses Rodrigues' rotation matrix → intrinsic ZYX Euler extraction.
-#[must_use] 
+#[must_use]
 pub fn axis_angle_to_euler(angle_deg: f64, ax: f64, ay: f64, az: f64) -> (f64, f64, f64) {
     let len = ax.mul_add(ax, ay.mul_add(ay, az * az)).sqrt();
     if len < 1e-12 {

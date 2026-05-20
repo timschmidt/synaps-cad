@@ -1,20 +1,18 @@
-use csgrs::sketch::Sketch;
 use csgrs::csg::CSG;
+use csgrs::sketch::Sketch;
 
 /// Bundled Liberation Sans Regular font data.
 const LIBERATION_SANS_REGULAR: &[u8] =
     include_bytes!("../../../assets/fonts/LiberationSans-Regular.ttf");
-const LIBERATION_SANS_BOLD: &[u8] =
-    include_bytes!("../../../assets/fonts/LiberationSans-Bold.ttf");
+const LIBERATION_SANS_BOLD: &[u8] = include_bytes!("../../../assets/fonts/LiberationSans-Bold.ttf");
 const LIBERATION_SANS_ITALIC: &[u8] =
     include_bytes!("../../../assets/fonts/LiberationSans-Italic.ttf");
 const LIBERATION_SANS_BOLD_ITALIC: &[u8] =
     include_bytes!("../../../assets/fonts/LiberationSans-BoldItalic.ttf");
 
-
 /// Resolve font data from a font name parameter.
 /// Tries system fonts first, falls back to bundled Liberation Sans.
-#[must_use] 
+#[must_use]
 pub fn resolve_font_data(font_param: Option<&str>) -> Vec<u8> {
     let Some(font_str) = font_param else {
         return LIBERATION_SANS_REGULAR.to_vec();
@@ -52,20 +50,15 @@ pub fn resolve_font_data(font_param: Option<&str>) -> Vec<u8> {
 }
 
 /// Search system font directories for a matching font file.
+#[cfg(not(target_arch = "wasm32"))]
 fn find_system_font(family: &str, style: &str) -> Option<Vec<u8>> {
     let font_dirs: &[&str] = if cfg!(target_os = "macos") {
-        &[
-            "/System/Library/Fonts",
-            "/Library/Fonts",
-        ]
+        &["/System/Library/Fonts", "/Library/Fonts"]
     } else if cfg!(target_os = "windows") {
         &["C:\\Windows\\Fonts"]
     } else {
         // Linux / FreeBSD
-        &[
-            "/usr/share/fonts",
-            "/usr/local/share/fonts",
-        ]
+        &["/usr/share/fonts", "/usr/local/share/fonts"]
     };
 
     let family_lower = family.to_lowercase().replace(' ', "");
@@ -90,7 +83,13 @@ fn find_system_font(family: &str, style: &str) -> Option<Vec<u8>> {
     None
 }
 
+#[cfg(target_arch = "wasm32")]
+fn find_system_font(_family: &str, _style: &str) -> Option<Vec<u8>> {
+    None
+}
+
 /// Recursively search a directory for a matching font file.
+#[cfg(not(target_arch = "wasm32"))]
 fn search_font_dir(
     dir: &std::path::Path,
     family_lower: &str,
@@ -114,9 +113,10 @@ fn search_font_dir(
                 && name_lower.contains(family_lower)
                 && (style_suffix == "-Regular"
                     || name_lower.contains(&style_suffix.to_lowercase().replace('-', "")))
-                && let Ok(data) = std::fs::read(&path) {
-                    return Some(data);
-                }
+                && let Ok(data) = std::fs::read(&path)
+            {
+                return Some(data);
+            }
         }
     }
     None
@@ -251,7 +251,9 @@ pub fn render_text_with_direction(
             .and_then(|gid| {
                 struct Checker(bool);
                 impl ttf_parser::OutlineBuilder for Checker {
-                    fn move_to(&mut self, _: f32, _: f32) { self.0 = true; }
+                    fn move_to(&mut self, _: f32, _: f32) {
+                        self.0 = true;
+                    }
                     fn line_to(&mut self, _: f32, _: f32) {}
                     fn quad_to(&mut self, _: f32, _: f32, _: f32, _: f32) {}
                     fn curve_to(&mut self, _: f32, _: f32, _: f32, _: f32, _: f32, _: f32) {}
@@ -266,13 +268,13 @@ pub fn render_text_with_direction(
         if has_outline {
             let glyph = Sketch::text(&ch.to_string(), font_data, corrected_size, None);
             let positioned = if is_vertical {
-                 // TTB/BTT: top-to-bottom layout. Text extends downward from y≈0.
-                 // Shift baseline down by ascender so the ascent line is at y=0.
-                 // Center character horizontally.
-                 glyph.translate(-advance / 2.0, -(cursor + ascender), 0.0)
+                // TTB/BTT: top-to-bottom layout. Text extends downward from y≈0.
+                // Shift baseline down by ascender so the ascent line is at y=0.
+                // Center character horizontally.
+                glyph.translate(-advance / 2.0, -(cursor + ascender), 0.0)
             } else {
-                 // LTR (and RTL after reversal): left-to-right from x=0.
-                 glyph.translate(cursor, 0.0, 0.0)
+                // LTR (and RTL after reversal): left-to-right from x=0.
+                glyph.translate(cursor, 0.0, 0.0)
             };
 
             combined = Some(match combined {

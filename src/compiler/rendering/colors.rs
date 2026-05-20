@@ -1,4 +1,4 @@
-#[must_use] 
+#[must_use]
 pub fn named_color(name: &str) -> Option<[f32; 3]> {
     let rgb = match name.to_lowercase().as_str() {
         "red" => [1.0, 0.0, 0.0],

@@ -112,11 +112,32 @@ fn spawn_axis_lines(
     axis_length: f32,
 ) {
     // X axis (red)
-    spawn_axis_line(commands, meshes, materials, Vec3::ZERO, Vec3::X * axis_length, Color::srgb(0.9, 0.2, 0.2));
+    spawn_axis_line(
+        commands,
+        meshes,
+        materials,
+        Vec3::ZERO,
+        Vec3::X * axis_length,
+        Color::srgb(0.9, 0.2, 0.2),
+    );
     // Y axis (blue) — Bevy Y-up = OpenSCAD Z-up
-    spawn_axis_line(commands, meshes, materials, Vec3::ZERO, Vec3::Y * axis_length, Color::srgb(0.2, 0.4, 0.9));
+    spawn_axis_line(
+        commands,
+        meshes,
+        materials,
+        Vec3::ZERO,
+        Vec3::Y * axis_length,
+        Color::srgb(0.2, 0.4, 0.9),
+    );
     // Z axis (green) — Bevy Z = OpenSCAD Y
-    spawn_axis_line(commands, meshes, materials, Vec3::ZERO, Vec3::Z * axis_length, Color::srgb(0.2, 0.8, 0.2));
+    spawn_axis_line(
+        commands,
+        meshes,
+        materials,
+        Vec3::ZERO,
+        Vec3::Z * axis_length,
+        Color::srgb(0.2, 0.8, 0.2),
+    );
 }
 
 fn spawn_axis_line(
@@ -197,7 +218,11 @@ fn spawn_grid(
 }
 
 /// Recompute grid size based on model bounding box and rebuild if changed.
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::too_many_arguments)]
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::too_many_arguments
+)]
 fn update_grid_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -214,8 +239,12 @@ fn update_grid_system(
     let mut found = false;
 
     for (mesh3d, global_tf) in &model_q {
-        let Some(mesh) = meshes.get(&mesh3d.0) else { continue };
-        let Some(aabb) = mesh.compute_aabb() else { continue };
+        let Some(mesh) = meshes.get(&mesh3d.0) else {
+            continue;
+        };
+        let Some(aabb) = mesh.compute_aabb() else {
+            continue;
+        };
         let local_min = Vec3::from(aabb.center) - Vec3::from(aabb.half_extents);
         let local_max = Vec3::from(aabb.center) + Vec3::from(aabb.half_extents);
         for corner in [

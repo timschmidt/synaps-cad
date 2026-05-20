@@ -1,6 +1,6 @@
-use bevy_egui::egui;
 use crate::plugins::code_editor::ScadCode;
 use crate::plugins::ui::utils::highlight_openscad;
+use bevy_egui::egui;
 
 pub fn render_code_editor(ui: &mut egui::Ui, scad_code: &mut ScadCode, editor_height: f32) {
     let mut highlighter = |ui: &egui::Ui, text: &str, wrap_width: f32| {

@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 
 use super::ai_chat::{AiConfig, ChatImage, ChatMessage, ChatState, normalize_custom_url};
@@ -83,24 +84,45 @@ const fn default_verification_rounds() -> u32 {
 }
 
 fn default_ollama_host() -> String {
-    std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".into())
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".into())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        option_env!("OLLAMA_HOST")
+            .unwrap_or("http://localhost:11434")
+            .into()
+    }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn config_dir() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join(APP_DIR_NAME))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn session_path() -> Option<PathBuf> {
     config_dir().map(|d| d.join(SESSION_FILE))
 }
 
 impl Plugin for PersistencePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, load_session_system)
-            .add_systems(Update, (auto_save_system, save_on_exit_system, save_on_change_system));
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = app;
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        app.add_systems(Startup, load_session_system).add_systems(
+            Update,
+            (auto_save_system, save_on_exit_system, save_on_change_system),
+        );
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn load_session_system(
     mut ai_config: ResMut<AiConfig>,
     mut chat_state: ResMut<ChatState>,
@@ -122,13 +144,14 @@ fn load_session_system(
     ai_config.model_name = saved.model_name;
     ai_config.temperature = saved.temperature;
     ai_config.max_verification_rounds = saved.max_verification_rounds;
-    
+
     // Trim API keys when loading from storage
-    ai_config.api_keys = saved.api_keys
+    ai_config.api_keys = saved
+        .api_keys
         .into_iter()
         .map(|(k, v)| (k, v.trim().to_string()))
         .collect();
-    
+
     ai_config.model_per_provider = saved.model_per_provider;
 
     // Migrate legacy ollama_host into custom_urls
@@ -203,14 +226,17 @@ fn load_session_system(
 
 /// Timer resource to throttle auto-save.
 #[derive(Resource)]
+#[cfg(not(target_arch = "wasm32"))]
 struct AutoSaveTimer(Timer);
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Default for AutoSaveTimer {
     fn default() -> Self {
         Self(Timer::from_seconds(5.0, TimerMode::Repeating))
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn auto_save_system(
     time: Res<Time>,
     mut timer: Local<AutoSaveTimer>,
@@ -227,6 +253,7 @@ fn auto_save_system(
     save_session(&ai_config, &chat_state, &scad_code, &label_vis);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn save_on_exit_system(
     exit_events: EventReader<AppExit>,
     ai_config: Res<AiConfig>,
@@ -240,6 +267,7 @@ fn save_on_exit_system(
 }
 
 /// Save soon after chat or UI settings change (debounced to avoid excessive I/O during streaming).
+#[cfg(not(target_arch = "wasm32"))]
 fn save_on_change_system(
     time: Res<Time>,
     mut debounce: Local<Option<f32>>,
@@ -262,7 +290,13 @@ fn save_on_change_system(
     }
 }
 
-fn save_session(ai_config: &AiConfig, chat_state: &ChatState, scad_code: &ScadCode, label_vis: &LabelVisibility) {
+#[cfg(not(target_arch = "wasm32"))]
+fn save_session(
+    ai_config: &AiConfig,
+    chat_state: &ChatState,
+    scad_code: &ScadCode,
+    label_vis: &LabelVisibility,
+) {
     let Some(dir) = config_dir() else {
         return;
     };
@@ -309,7 +343,11 @@ fn save_session(ai_config: &AiConfig, chat_state: &ChatState, scad_code: &ScadCo
         api_keys: ai_config.api_keys.clone(),
         model_per_provider: ai_config.model_per_provider.clone(),
         custom_urls: ai_config.custom_urls.clone(),
-        ollama_host: ai_config.custom_urls.get("Ollama").cloned().unwrap_or_default(),
+        ollama_host: ai_config
+            .custom_urls
+            .get("Ollama")
+            .cloned()
+            .unwrap_or_default(),
         ui: UiSettings {
             show_labels: label_vis.visible,
         },

@@ -61,6 +61,22 @@ Pre-built binaries for Linux, macOS (Apple Silicon & Intel), and Windows are ava
 cargo run
 ```
 
+### Web Build
+
+SynapsCAD can also be built for the browser and packaged for static hosting:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.112 --locked
+cargo build --release --target wasm32-unknown-unknown
+mkdir -p dist/pkg
+wasm-bindgen --target web --out-dir dist/pkg --out-name synaps_cad target/wasm32-unknown-unknown/release/synaps-cad.wasm
+cp web/index.html dist/index.html
+touch dist/.nojekyll
+```
+
+The web build currently focuses on the editor and 3D renderer. Native desktop integrations such as AI networking, persistence, file dialogs, clipboard image access, and model export are disabled in the browser build.
+
 ### AI Provider Setup
 
 SynapsCAD uses the [genai](https://crates.io/crates/genai) crate to connect to AI providers — including **local models via [Ollama](https://ollama.com)** for fully offline, private usage (no API key needed). Set the API key for your chosen cloud provider as an environment variable:
