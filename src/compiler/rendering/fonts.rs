@@ -84,7 +84,7 @@ fn find_system_font(family: &str, style: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn find_system_font(_family: &str, _style: &str) -> Option<Vec<u8>> {
+const fn find_system_font(_family: &str, _style: &str) -> Option<Vec<u8>> {
     None
 }
 

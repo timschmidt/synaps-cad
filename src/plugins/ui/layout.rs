@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
-#[cfg(not(target_arch = "wasm32"))]
 use std::sync::{Mutex, mpsc};
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -14,23 +13,20 @@ use crate::plugins::compilation::{CompilationState, LastCompiledParts, ModelView
 use crate::plugins::ui::chat::render_chat_content;
 use crate::plugins::ui::editor::render_code_editor;
 use crate::plugins::ui::resources::{
-    AppErrors, ExportState, ImagePreviewState, OccupiedScreenSpace, SettingsDialogOpen,
+    AppErrors, ExportState, ImagePreviewState, OccupiedScreenSpace, PickedImage, SettingsDialogOpen,
 };
 use crate::plugins::ui::utils::show_image_preview;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::plugins::ui::utils::{clipboard_image_as_chat_image, copy_chat_image_to_clipboard};
 
+#[cfg(not(target_arch = "wasm32"))]
 fn env_var_value(name: &str) -> Option<String> {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        std::env::var(name).ok()
-    }
+    std::env::var(name).ok()
+}
 
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = name;
-        None
-    }
+#[cfg(target_arch = "wasm32")]
+const fn env_var_value(_name: &str) -> Option<String> {
+    None
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -410,6 +406,26 @@ fn truncate_filename(name: &str, max_chars: usize) -> String {
     format!("{truncated}…")
 }
 
+#[allow(clippy::future_not_send)]
+async fn pick_chat_images() -> Vec<PickedImage> {
+    let Some(handles) = rfd::AsyncFileDialog::new()
+        .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
+        .pick_files()
+        .await
+    else {
+        return Vec::new();
+    };
+
+    let mut images = Vec::with_capacity(handles.len());
+    for handle in handles {
+        images.push(PickedImage {
+            filename: handle.file_name(),
+            bytes: handle.read().await,
+        });
+    }
+    images
+}
+
 fn render_chat_input(
     ui: &mut egui::Ui,
     chat_state: &mut ChatState,
@@ -455,38 +471,30 @@ fn render_chat_input(
                             && resp.has_focus()
                             && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.shift);
                     }
-                    attach_clicked = ui
-                        .add_enabled(cfg!(not(target_arch = "wasm32")), egui::Button::new("📎"))
-                        .on_disabled_hover_text(
-                            "Image attachments are not available in the web build",
-                        )
-                        .clicked();
+                    attach_clicked = ui.button("📎").clicked();
                 });
                 resp
             })
             .inner;
 
-        #[cfg(not(target_arch = "wasm32"))]
         if attach_clicked && file_picker.receiver.is_none() {
             let (tx, rx) = mpsc::channel();
             file_picker.receiver = Some(Mutex::new(rx));
+
+            #[cfg(not(target_arch = "wasm32"))]
             runtime.0.spawn(async move {
-                let handles = rfd::AsyncFileDialog::new()
-                    .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp", "bmp"])
-                    .pick_files()
-                    .await;
-                let _ = tx.send(
-                    handles
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|h| h.path().to_path_buf())
-                        .collect(),
-                );
+                let _ = tx.send(pick_chat_images().await);
+            });
+
+            #[cfg(target_arch = "wasm32")]
+            wasm_bindgen_futures::spawn_local(async move {
+                let _ = tx.send(pick_chat_images().await);
             });
         }
+
         #[cfg(target_arch = "wasm32")]
         {
-            let _ = (attach_clicked, file_picker, runtime);
+            let _ = runtime;
         }
 
         if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) && !chat_state.input_history.is_empty() {

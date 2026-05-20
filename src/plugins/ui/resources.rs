@@ -91,7 +91,12 @@ impl PerformanceMonitor {
 /// Async file-picker result receiver (avoids blocking the main thread).
 #[derive(Resource, Default)]
 pub struct FilePickerState {
-    pub(crate) receiver: Option<Mutex<mpsc::Receiver<Vec<std::path::PathBuf>>>>,
+    pub(crate) receiver: Option<Mutex<mpsc::Receiver<Vec<PickedImage>>>>,
+}
+
+pub struct PickedImage {
+    pub(crate) filename: String,
+    pub(crate) bytes: Vec<u8>,
 }
 
 /// State for image hover preview in chat.

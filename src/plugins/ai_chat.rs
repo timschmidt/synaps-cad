@@ -1,3 +1,5 @@
+#![cfg_attr(target_arch = "wasm32", allow(clippy::future_not_send))]
+
 use bevy::prelude::*;
 use std::sync::{Mutex, mpsc};
 
@@ -395,7 +397,7 @@ pub struct TokioRuntime(pub tokio::runtime::Runtime);
 pub struct TokioRuntime;
 
 pub const fn ai_networking_available() -> bool {
-    !cfg!(target_arch = "wasm32")
+    true
 }
 
 impl Plugin for AiChatPlugin {
@@ -405,7 +407,22 @@ impl Plugin for AiChatPlugin {
             app.init_resource::<AiConfig>()
                 .init_resource::<ChatState>()
                 .init_resource::<AvailableModels>()
-                .init_resource::<TokioRuntime>();
+                .init_resource::<TokioRuntime>()
+                .add_systems(
+                    Update,
+                    (
+                        fetch_models_system.run_if(|available: Res<AvailableModels>| {
+                            available.loading
+                                || available.receiver.is_some()
+                                || available.force_reload
+                                || available.last_adapter.is_empty()
+                        }),
+                        ai_send_system,
+                        ai_receive_system,
+                        ai_verify_system,
+                    )
+                        .chain(),
+                );
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -656,6 +673,267 @@ async fn fetch_model_names(
         Ok(models) if !models.is_empty() => Ok(models),
         Ok(_) => Err("No models returned. Check your API key.".into()),
         Err(e) => Err(format!("Failed to fetch models: {e}")),
+    }
+}
+
+/// Fetch model names when adapter selection changes in the browser.
+#[cfg(target_arch = "wasm32")]
+fn fetch_models_system(
+    mut ai_config: ResMut<AiConfig>,
+    mut available: ResMut<AvailableModels>,
+    mut redraw: EventWriter<bevy::window::RequestRedraw>,
+) {
+    if let Some(ref rx_mutex) = available.receiver {
+        redraw.send(bevy::window::RequestRedraw);
+        let rx = rx_mutex.lock().unwrap();
+        if let Ok(result) = rx.try_recv() {
+            drop(rx);
+            available.loading = false;
+            available.receiver = None;
+            match result {
+                Ok(models) => {
+                    available.error = None;
+                    if let Some(pending) = available.pending_model.take() {
+                        if models.contains(&pending) {
+                            ai_config.model_name = pending;
+                            available.needs_configuration = false;
+                        } else {
+                            available.needs_configuration = !pending.is_empty();
+                        }
+                    } else {
+                        available.needs_configuration = !ai_config.model_name.is_empty()
+                            && !models.contains(&ai_config.model_name);
+                    }
+                    available.models = models;
+                }
+                Err(e) => {
+                    eprintln!("[SynapsCAD] Failed to fetch models: {e}");
+                    available.models.clear();
+                    available.error = Some(e);
+                }
+            }
+            return;
+        }
+    }
+
+    let current_key = ai_config.api_key().to_string();
+    let key_changed = available.last_api_key != current_key;
+    let current_url = ai_config.custom_url().to_string();
+    let url_changed = available.last_custom_url != current_url;
+    let force_reload = available.force_reload;
+    available.force_reload = false;
+    if (force_reload
+        || available.last_adapter != ai_config.adapter_name
+        || key_changed
+        || url_changed)
+        && !available.loading
+    {
+        available.models.clear();
+        if !ai_config.model_name.is_empty() {
+            available.pending_model = Some(ai_config.model_name.clone());
+        }
+        ai_config.model_name.clear();
+        available.last_adapter.clone_from(&ai_config.adapter_name);
+        available.last_api_key.clone_from(&current_key);
+        available.last_custom_url.clone_from(&current_url);
+        available.loading = true;
+
+        let adapter_name = ai_config.adapter_name.clone();
+        let api_key = if current_key.is_empty() {
+            None
+        } else {
+            Some(current_key)
+        };
+        let custom_url = current_url;
+        let (tx, rx) = mpsc::channel();
+        available.receiver = Some(Mutex::new(rx));
+
+        wasm_bindgen_futures::spawn_local(async move {
+            let result = fetch_model_names(&adapter_name, api_key.as_deref(), &custom_url).await;
+            let _ = tx.send(result);
+        });
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn fetch_model_names(
+    adapter_name: &str,
+    api_key: Option<&str>,
+    custom_url: &str,
+) -> Result<Vec<String>, String> {
+    let base = if custom_url.is_empty() {
+        default_placeholder_url(adapter_name)
+    } else {
+        custom_url
+    };
+
+    match adapter_name {
+        "Ollama" => fetch_ollama_models(base, api_key).await,
+        "Anthropic" if custom_url.is_empty() => fetch_anthropic_models(base, api_key).await,
+        "Gemini" if custom_url.is_empty() => fetch_gemini_models(base, api_key).await,
+        "Cohere" if custom_url.is_empty() => fetch_cohere_models(base, api_key).await,
+        _ => fetch_openai_compatible_models(base, api_key).await,
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn fetch_json(
+    request: reqwest::RequestBuilder,
+    label: &str,
+) -> Result<serde_json::Value, String> {
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("{label} request failed. Browser CORS policy may require a proxy or CORS-enabled custom endpoint. Details: {e}"))?;
+
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("Unauthorized (401). Please check your API key.".into());
+    }
+    if !response.status().is_success() {
+        return Err(format!(
+            "{label} request failed with HTTP status {}.",
+            response.status()
+        ));
+    }
+
+    response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse {label} response: {e}"))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn with_bearer_auth(
+    mut request: reqwest::RequestBuilder,
+    api_key: Option<&str>,
+) -> reqwest::RequestBuilder {
+    if let Some(key) = api_key
+        && !key.is_empty()
+    {
+        request = request.header("Authorization", format!("Bearer {key}"));
+    }
+    request
+}
+
+#[cfg(target_arch = "wasm32")]
+fn parse_model_names(body: &serde_json::Value) -> Vec<String> {
+    let mut models = Vec::new();
+
+    if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
+        for model in data {
+            if let Some(id) = model.get("id").and_then(|i| i.as_str()) {
+                models.push(id.to_string());
+            }
+        }
+    }
+
+    if let Some(models_arr) = body.get("models").and_then(|m| m.as_array()) {
+        for model in models_arr {
+            if let Some(name) = model
+                .get("name")
+                .or_else(|| model.get("id"))
+                .and_then(|n| n.as_str())
+            {
+                let name = name.strip_prefix("models/").unwrap_or(name);
+                models.push(name.to_string());
+            }
+        }
+    }
+
+    models.sort();
+    models.dedup();
+    models
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn fetch_openai_compatible_models(
+    base: &str,
+    api_key: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::new();
+    let request = with_bearer_auth(client.get(format!("{base}models")), api_key);
+    let body = fetch_json(request, "model list").await?;
+    let models = parse_model_names(&body);
+    if models.is_empty() {
+        Err("No models returned. You can type the model name manually.".into())
+    } else {
+        Ok(models)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn fetch_ollama_models(base: &str, api_key: Option<&str>) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::new();
+    let request = with_bearer_auth(client.get(format!("{base}api/tags")), api_key);
+    let body = fetch_json(request, "Ollama model list").await?;
+    Ok(parse_model_names(&body))
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn fetch_anthropic_models(base: &str, api_key: Option<&str>) -> Result<Vec<String>, String> {
+    let Some(key) = api_key.filter(|key| !key.is_empty()) else {
+        return Err("Enter an Anthropic API key or type the model name manually.".into());
+    };
+    let client = reqwest::Client::new();
+    let request = client
+        .get(format!("{base}models"))
+        .header("x-api-key", key)
+        .header("anthropic-version", "2023-06-01");
+    let body = fetch_json(request, "Anthropic model list").await?;
+    let models = parse_model_names(&body);
+    if models.is_empty() {
+        Err("No Anthropic models returned. You can type the model name manually.".into())
+    } else {
+        Ok(models)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn fetch_gemini_models(base: &str, api_key: Option<&str>) -> Result<Vec<String>, String> {
+    let Some(key) = api_key.filter(|key| !key.is_empty()) else {
+        return Err("Enter a Gemini API key or type the model name manually.".into());
+    };
+    let client = reqwest::Client::new();
+    let body = fetch_json(
+        client.get(format!("{base}models?key={key}")),
+        "Gemini model list",
+    )
+    .await?;
+    let mut models = Vec::new();
+    if let Some(models_arr) = body.get("models").and_then(|m| m.as_array()) {
+        for model in models_arr {
+            let supports_generate_content = model
+                .get("supportedGenerationMethods")
+                .and_then(|m| m.as_array())
+                .is_none_or(|methods| {
+                    methods
+                        .iter()
+                        .any(|method| method.as_str() == Some("generateContent"))
+                });
+            if supports_generate_content
+                && let Some(name) = model.get("name").and_then(|n| n.as_str())
+            {
+                models.push(name.strip_prefix("models/").unwrap_or(name).to_string());
+            }
+        }
+    }
+    if models.is_empty() {
+        Err("No Gemini models returned. You can type the model name manually.".into())
+    } else {
+        Ok(models)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn fetch_cohere_models(base: &str, api_key: Option<&str>) -> Result<Vec<String>, String> {
+    let client = reqwest::Client::new();
+    let request = with_bearer_auth(client.get(format!("{base}models")), api_key);
+    let body = fetch_json(request, "Cohere model list").await?;
+    let models = parse_model_names(&body);
+    if models.is_empty() {
+        Err("No Cohere models returned. You can type the model name manually.".into())
+    } else {
+        Ok(models)
     }
 }
 
@@ -1053,6 +1331,710 @@ async fn run_ai_stream(
     });
 
     Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn ai_send_system(
+    mut chat_state: ResMut<ChatState>,
+    scad_code: Res<ScadCode>,
+    ai_config: Res<AiConfig>,
+    model_views: Res<super::compilation::ModelViews>,
+    part_query: Query<&PartLabel>,
+) {
+    if !chat_state.is_streaming || chat_state.stream_receiver.is_some() {
+        return;
+    }
+
+    let messages: Vec<ChatMessage> = chat_state.messages[chat_state.session_start..].to_vec();
+    let part_context = build_part_context(&part_query);
+
+    let current_code = scad_code.text.clone();
+    let (active_view_name, _) = super::code_editor::detect_views(&current_code);
+    let adapter_name = ai_config.adapter_name.clone();
+    let model_name = ai_config.model_name.clone();
+    let current_key = ai_config.api_key().to_string();
+    let api_key = if current_key.is_empty() {
+        None
+    } else {
+        Some(current_key)
+    };
+    let custom_url = ai_config.custom_url().to_string();
+    let system_prompt = ai_config.system_prompt.clone();
+    let temperature = ai_config.temperature;
+    let extended_thinking = ai_config.extended_thinking;
+    let views = model_views.views.clone();
+    let other_views = model_views.other_views.clone();
+
+    let (tx, rx) = mpsc::channel();
+    chat_state.stream_receiver = Some(Mutex::new(rx));
+
+    if cfg!(debug_assertions) {
+        eprintln!("[DEBUG] === Browser AI Chat Request ===");
+        eprintln!("[DEBUG] Provider: {}", ai_config.adapter_name);
+        eprintln!("[DEBUG] Model: {model_name}");
+        if !custom_url.is_empty() {
+            eprintln!("[DEBUG] Custom URL: {custom_url}");
+        }
+        eprintln!("[DEBUG] Temperature: {temperature}");
+        eprintln!("[DEBUG] Extended thinking: {extended_thinking}");
+        eprintln!("[DEBUG] System prompt: {} chars", system_prompt.len());
+        eprintln!("[DEBUG] Messages: {}", messages.len());
+        eprintln!("[DEBUG] Views: {}", views.len());
+    }
+
+    wasm_bindgen_futures::spawn_local(async move {
+        match run_ai_request_wasm(
+            messages,
+            current_code,
+            active_view_name,
+            &adapter_name,
+            &model_name,
+            api_key.as_deref(),
+            &custom_url,
+            &system_prompt,
+            temperature,
+            extended_thinking,
+            &views,
+            &other_views,
+            part_context,
+        )
+        .await
+        {
+            Ok((content, reasoning)) => {
+                let _ = tx.send(AiStreamChunk::Done { content, reasoning });
+            }
+            Err(e) => {
+                if cfg!(debug_assertions) {
+                    eprintln!("[DEBUG] AI error: {e}");
+                }
+                let _ = tx.send(AiStreamChunk::Error(format!("AI error: {e}")));
+            }
+        }
+    });
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone, Debug)]
+enum BrowserPart {
+    Text(String),
+    Image {
+        mime_type: String,
+        base64_data: String,
+    },
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone, Debug)]
+struct BrowserMessage {
+    role: String,
+    parts: Vec<BrowserPart>,
+}
+
+#[allow(clippy::too_many_arguments, clippy::cognitive_complexity)]
+#[cfg(target_arch = "wasm32")]
+async fn run_ai_request_wasm(
+    messages: Vec<ChatMessage>,
+    current_code: String,
+    active_view_name: Option<String>,
+    adapter_name: &str,
+    model_name: &str,
+    api_key: Option<&str>,
+    custom_url: &str,
+    base_system_prompt: &str,
+    temperature: f64,
+    extended_thinking: bool,
+    views: &[(String, String)],
+    other_views: &[(String, Vec<(String, String)>)],
+    part_context: String,
+) -> Result<(String, Option<String>), String> {
+    let mut system_prompt =
+        format!("{base_system_prompt}\n\nCurrent OpenSCAD code:\n```\n{current_code}\n```\n");
+    if !part_context.is_empty() {
+        system_prompt.push('\n');
+        system_prompt.push_str(&part_context);
+    }
+
+    let request_messages = build_browser_messages(messages, active_view_name, views, other_views);
+
+    let effective_temperature = if extended_thinking && model_name.contains("claude") {
+        1.0
+    } else {
+        temperature
+    };
+
+    let base = if custom_url.is_empty() {
+        default_placeholder_url(adapter_name)
+    } else {
+        custom_url
+    };
+
+    let result = match adapter_name {
+        "Anthropic" => {
+            request_anthropic(
+                base,
+                model_name,
+                api_key,
+                &system_prompt,
+                &request_messages,
+                effective_temperature,
+            )
+            .await
+        }
+        "Gemini" => {
+            request_gemini(
+                base,
+                model_name,
+                api_key,
+                &system_prompt,
+                &request_messages,
+                effective_temperature,
+            )
+            .await
+        }
+        "Ollama" => {
+            request_ollama(
+                base,
+                model_name,
+                api_key,
+                &system_prompt,
+                &request_messages,
+                effective_temperature,
+            )
+            .await
+        }
+        "Cohere" if custom_url.is_empty() => {
+            request_cohere(
+                base,
+                model_name,
+                api_key,
+                &system_prompt,
+                &request_messages,
+                effective_temperature,
+            )
+            .await
+        }
+        _ => {
+            request_openai_compatible(
+                base,
+                model_name,
+                api_key,
+                &system_prompt,
+                &request_messages,
+                effective_temperature,
+            )
+            .await
+        }
+    }?;
+
+    if result.0.trim().is_empty() {
+        Err("The AI returned an empty response.".into())
+    } else {
+        Ok(result)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn build_browser_messages(
+    messages: Vec<ChatMessage>,
+    active_view_name: Option<String>,
+    views: &[(String, String)],
+    other_views: &[(String, Vec<(String, String)>)],
+) -> Vec<BrowserMessage> {
+    let mut request_messages = Vec::new();
+
+    for msg in messages {
+        if msg.is_error {
+            continue;
+        }
+        match msg.role.as_str() {
+            "user" => {
+                let mut parts = vec![BrowserPart::Text(msg.content)];
+                for img in msg.images {
+                    parts.push(BrowserPart::Text(format!("{}:", img.filename)));
+                    parts.push(BrowserPart::Image {
+                        mime_type: img.mime_type,
+                        base64_data: img.base64_data,
+                    });
+                }
+                request_messages.push(BrowserMessage {
+                    role: "user".into(),
+                    parts,
+                });
+            }
+            "assistant" => request_messages.push(BrowserMessage {
+                role: "assistant".into(),
+                parts: vec![BrowserPart::Text(msg.content)],
+            }),
+            _ => {}
+        }
+    }
+
+    if !views.is_empty() {
+        let view_intro = active_view_name.as_ref().map_or_else(
+            || "Current 3D model (active view) rendered from five orthographic/isometric views:"
+                .to_string(),
+            |name| {
+                format!(
+                    "The user is CURRENTLY SEEING the following $view \"{name}\" in their viewport. Here are five orthographic/isometric views of it:"
+                )
+            },
+        );
+        let mut parts = vec![BrowserPart::Text(view_intro)];
+        for (label, base64_png) in views {
+            if !base64_png.is_empty() {
+                let descriptive_label = match label.as_str() {
+                    "Front" => "Front view (Looking from +Y towards origin)",
+                    "Right" => "Right view (Looking from +X towards origin)",
+                    "Top" => "Top view (Looking from +Z towards origin)",
+                    "Bottom" => "Bottom view (Looking from -Z towards origin)",
+                    "Iso" => "Isometric view (3/4 perspective)",
+                    _ => label,
+                };
+                parts.push(BrowserPart::Text(format!("{descriptive_label}:")));
+                parts.push(BrowserPart::Image {
+                    mime_type: "image/png".into(),
+                    base64_data: base64_png.clone(),
+                });
+            }
+        }
+        request_messages.push(BrowserMessage {
+            role: "user".into(),
+            parts,
+        });
+    }
+
+    for (view_name, view_images) in other_views {
+        let mut parts = vec![BrowserPart::Text(format!(
+            "Rendered views for $view \"{view_name}\":"
+        ))];
+        for (label, base64_png) in view_images {
+            if !base64_png.is_empty() {
+                parts.push(BrowserPart::Text(format!("{label}:")));
+                parts.push(BrowserPart::Image {
+                    mime_type: "image/png".into(),
+                    base64_data: base64_png.clone(),
+                });
+            }
+        }
+        request_messages.push(BrowserMessage {
+            role: "user".into(),
+            parts,
+        });
+    }
+
+    let ends_with_user = request_messages
+        .last()
+        .is_some_and(|message| message.role == "user");
+    if !ends_with_user {
+        request_messages.push(BrowserMessage {
+            role: "user".into(),
+            parts: vec![BrowserPart::Text(
+                "Please respond to the conversation above.".into(),
+            )],
+        });
+    }
+
+    request_messages
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn post_json(
+    request: reqwest::RequestBuilder,
+    body: serde_json::Value,
+    label: &str,
+) -> Result<serde_json::Value, String> {
+    fetch_json(request.json(&body), label).await
+}
+
+#[cfg(target_arch = "wasm32")]
+fn text_from_parts(parts: &[BrowserPart]) -> String {
+    let mut text = String::new();
+    for part in parts {
+        if let BrowserPart::Text(part_text) = part {
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            text.push_str(part_text);
+        }
+    }
+    text
+}
+
+#[cfg(target_arch = "wasm32")]
+fn openai_content_parts(parts: &[BrowserPart]) -> serde_json::Value {
+    use serde_json::json;
+
+    if parts
+        .iter()
+        .all(|part| matches!(part, BrowserPart::Text(_)))
+    {
+        return serde_json::Value::String(text_from_parts(parts));
+    }
+
+    serde_json::Value::Array(
+        parts
+            .iter()
+            .map(|part| match part {
+                BrowserPart::Text(text) => json!({ "type": "text", "text": text }),
+                BrowserPart::Image {
+                    mime_type,
+                    base64_data,
+                } => json!({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": format!("data:{mime_type};base64,{base64_data}")
+                    }
+                }),
+            })
+            .collect(),
+    )
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn request_openai_compatible(
+    base: &str,
+    model_name: &str,
+    api_key: Option<&str>,
+    system_prompt: &str,
+    messages: &[BrowserMessage],
+    temperature: f64,
+) -> Result<(String, Option<String>), String> {
+    use serde_json::json;
+
+    let mut request_messages = vec![json!({
+        "role": "system",
+        "content": system_prompt,
+    })];
+    for message in messages {
+        request_messages.push(json!({
+            "role": if message.role == "assistant" { "assistant" } else { "user" },
+            "content": openai_content_parts(&message.parts),
+        }));
+    }
+
+    let client = reqwest::Client::new();
+    let request = with_bearer_auth(client.post(format!("{base}chat/completions")), api_key);
+    let body = post_json(
+        request,
+        json!({
+            "model": model_name,
+            "messages": request_messages,
+            "temperature": temperature,
+            "stream": false,
+        }),
+        "OpenAI-compatible chat",
+    )
+    .await?;
+
+    let content = body
+        .get("choices")
+        .and_then(|choices| choices.as_array())
+        .and_then(|choices| choices.first())
+        .and_then(|choice| {
+            choice
+                .get("message")
+                .and_then(|message| message.get("content"))
+                .and_then(|content| content.as_str())
+                .or_else(|| choice.get("text").and_then(|text| text.as_str()))
+        })
+        .unwrap_or_default()
+        .to_string();
+
+    Ok((content, None))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn anthropic_content_parts(parts: &[BrowserPart]) -> Vec<serde_json::Value> {
+    use serde_json::json;
+
+    parts
+        .iter()
+        .map(|part| match part {
+            BrowserPart::Text(text) => json!({ "type": "text", "text": text }),
+            BrowserPart::Image {
+                mime_type,
+                base64_data,
+            } => json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": mime_type,
+                    "data": base64_data,
+                }
+            }),
+        })
+        .collect()
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn request_anthropic(
+    base: &str,
+    model_name: &str,
+    api_key: Option<&str>,
+    system_prompt: &str,
+    messages: &[BrowserMessage],
+    temperature: f64,
+) -> Result<(String, Option<String>), String> {
+    use serde_json::json;
+
+    let Some(key) = api_key.filter(|key| !key.is_empty()) else {
+        return Err("Enter an Anthropic API key before sending.".into());
+    };
+
+    let request_messages: Vec<serde_json::Value> = messages
+        .iter()
+        .map(|message| {
+            json!({
+                "role": if message.role == "assistant" { "assistant" } else { "user" },
+                "content": anthropic_content_parts(&message.parts),
+            })
+        })
+        .collect();
+
+    let client = reqwest::Client::new();
+    let request = client
+        .post(format!("{base}messages"))
+        .header("x-api-key", key)
+        .header("anthropic-version", "2023-06-01");
+    let body = post_json(
+        request,
+        json!({
+            "model": model_name,
+            "max_tokens": 4096,
+            "temperature": temperature,
+            "system": system_prompt,
+            "messages": request_messages,
+        }),
+        "Anthropic chat",
+    )
+    .await?;
+
+    let mut content = String::new();
+    let mut reasoning = String::new();
+    if let Some(parts) = body.get("content").and_then(|content| content.as_array()) {
+        for part in parts {
+            match part.get("type").and_then(|value| value.as_str()) {
+                Some("text") => {
+                    if let Some(text) = part.get("text").and_then(|text| text.as_str()) {
+                        content.push_str(text);
+                    }
+                }
+                Some("thinking") => {
+                    if let Some(text) = part.get("thinking").and_then(|text| text.as_str()) {
+                        reasoning.push_str(text);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let reasoning = if reasoning.is_empty() {
+        None
+    } else {
+        Some(reasoning)
+    };
+    Ok((content, reasoning))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn gemini_parts(parts: &[BrowserPart]) -> Vec<serde_json::Value> {
+    use serde_json::json;
+
+    parts
+        .iter()
+        .map(|part| match part {
+            BrowserPart::Text(text) => json!({ "text": text }),
+            BrowserPart::Image {
+                mime_type,
+                base64_data,
+            } => json!({
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": base64_data,
+                }
+            }),
+        })
+        .collect()
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn request_gemini(
+    base: &str,
+    model_name: &str,
+    api_key: Option<&str>,
+    system_prompt: &str,
+    messages: &[BrowserMessage],
+    temperature: f64,
+) -> Result<(String, Option<String>), String> {
+    use serde_json::json;
+
+    let model_name = model_name.strip_prefix("models/").unwrap_or(model_name);
+    let mut url = format!("{base}models/{model_name}:generateContent");
+    if let Some(key) = api_key.filter(|key| !key.is_empty()) {
+        url.push_str("?key=");
+        url.push_str(key);
+    }
+
+    let contents: Vec<serde_json::Value> = messages
+        .iter()
+        .map(|message| {
+            json!({
+                "role": if message.role == "assistant" { "model" } else { "user" },
+                "parts": gemini_parts(&message.parts),
+            })
+        })
+        .collect();
+
+    let client = reqwest::Client::new();
+    let body = post_json(
+        client.post(url),
+        json!({
+            "systemInstruction": {
+                "parts": [{ "text": system_prompt }],
+            },
+            "contents": contents,
+            "generationConfig": {
+                "temperature": temperature,
+            },
+        }),
+        "Gemini chat",
+    )
+    .await?;
+
+    let mut content = String::new();
+    if let Some(parts) = body
+        .get("candidates")
+        .and_then(|candidates| candidates.as_array())
+        .and_then(|candidates| candidates.first())
+        .and_then(|candidate| candidate.get("content"))
+        .and_then(|content| content.get("parts"))
+        .and_then(|parts| parts.as_array())
+    {
+        for part in parts {
+            if let Some(text) = part.get("text").and_then(|text| text.as_str()) {
+                content.push_str(text);
+            }
+        }
+    }
+
+    Ok((content, None))
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn request_ollama(
+    base: &str,
+    model_name: &str,
+    api_key: Option<&str>,
+    system_prompt: &str,
+    messages: &[BrowserMessage],
+    temperature: f64,
+) -> Result<(String, Option<String>), String> {
+    use serde_json::json;
+
+    let mut request_messages = vec![json!({
+        "role": "system",
+        "content": system_prompt,
+    })];
+    for message in messages {
+        let images: Vec<String> = message
+            .parts
+            .iter()
+            .filter_map(|part| match part {
+                BrowserPart::Image { base64_data, .. } => Some(base64_data.clone()),
+                BrowserPart::Text(_) => None,
+            })
+            .collect();
+        let mut message_json = json!({
+            "role": if message.role == "assistant" { "assistant" } else { "user" },
+            "content": text_from_parts(&message.parts),
+        });
+        if !images.is_empty() {
+            message_json["images"] = serde_json::Value::Array(
+                images.into_iter().map(serde_json::Value::String).collect(),
+            );
+        }
+        request_messages.push(message_json);
+    }
+
+    let client = reqwest::Client::new();
+    let request = with_bearer_auth(client.post(format!("{base}api/chat")), api_key);
+    let body = post_json(
+        request,
+        json!({
+            "model": model_name,
+            "messages": request_messages,
+            "stream": false,
+            "options": {
+                "temperature": temperature,
+            },
+        }),
+        "Ollama chat",
+    )
+    .await?;
+    let content = body
+        .get("message")
+        .and_then(|message| message.get("content"))
+        .and_then(|content| content.as_str())
+        .unwrap_or_default()
+        .to_string();
+    Ok((content, None))
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn request_cohere(
+    base: &str,
+    model_name: &str,
+    api_key: Option<&str>,
+    system_prompt: &str,
+    messages: &[BrowserMessage],
+    temperature: f64,
+) -> Result<(String, Option<String>), String> {
+    use serde_json::json;
+
+    let Some(key) = api_key.filter(|key| !key.is_empty()) else {
+        return Err("Enter a Cohere API key before sending.".into());
+    };
+
+    let request_messages: Vec<serde_json::Value> = messages
+        .iter()
+        .map(|message| {
+            json!({
+                "role": if message.role == "assistant" { "assistant" } else { "user" },
+                "content": text_from_parts(&message.parts),
+            })
+        })
+        .collect();
+
+    let client = reqwest::Client::new();
+    let body = post_json(
+        client
+            .post(format!("{base}chat"))
+            .header("Authorization", format!("Bearer {key}")),
+        json!({
+            "model": model_name,
+            "messages": request_messages,
+            "preamble": system_prompt,
+            "temperature": temperature,
+        }),
+        "Cohere chat",
+    )
+    .await?;
+
+    let content = body
+        .get("text")
+        .and_then(|text| text.as_str())
+        .or_else(|| {
+            body.get("message")
+                .and_then(|message| message.get("content"))
+                .and_then(|content| content.as_array())
+                .and_then(|content| content.first())
+                .and_then(|content| content.get("text"))
+                .and_then(|text| text.as_str())
+        })
+        .unwrap_or_default()
+        .to_string();
+    Ok((content, None))
 }
 
 fn ai_receive_system(

@@ -39,6 +39,7 @@ impl Plugin for UiPlugin {
                     set_window_icon,
                     splash_screen_system,
                     ui_layout_system,
+                    poll_file_picker_system,
                     viewport_toolbar_system,
                     cheatsheet_system,
                     draw_part_labels,
@@ -48,13 +49,6 @@ impl Plugin for UiPlugin {
             );
 
         #[cfg(not(target_arch = "wasm32"))]
-        app.add_systems(
-            Update,
-            (
-                poll_file_picker_system,
-                poll_export_system,
-                file_drop_system,
-            ),
-        );
+        app.add_systems(Update, (poll_export_system, file_drop_system));
     }
 }

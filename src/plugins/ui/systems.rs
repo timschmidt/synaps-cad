@@ -2,14 +2,14 @@ use bevy::prelude::*;
 use bevy::window::RequestRedraw;
 use bevy_egui::{EguiClipboard, EguiContext, EguiContexts, EguiInput, egui};
 
-#[cfg(not(target_arch = "wasm32"))]
 use crate::plugins::ai_chat::ChatState;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::plugins::compilation::LastCompiledParts;
 #[cfg(not(target_arch = "wasm32"))]
-use crate::plugins::ui::resources::{AppErrors, ExportState, FilePickerState};
-use crate::plugins::ui::resources::{PerformanceMonitor, SplashScreen};
+use crate::plugins::ui::resources::{AppErrors, ExportState};
+use crate::plugins::ui::resources::{FilePickerState, PerformanceMonitor, SplashScreen};
 pub use crate::plugins::ui::theme::{SPLASH_IMAGE_BYTES, set_window_icon};
+use crate::plugins::ui::utils::chat_image_from_bytes;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::plugins::ui::utils::{IMAGE_EXTENSIONS, load_image_as_chat_image};
 
@@ -157,7 +157,6 @@ pub fn splash_screen_system(
         });
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub fn poll_file_picker_system(
     mut file_picker: ResMut<FilePickerState>,
     mut chat_state: ResMut<ChatState>,
@@ -166,15 +165,15 @@ pub fn poll_file_picker_system(
     if file_picker.receiver.is_some() {
         redraw.send(RequestRedraw);
     }
-    let paths = file_picker
+    let picked_images = file_picker
         .receiver
         .as_ref()
         .and_then(|rx_mutex| rx_mutex.lock().unwrap().try_recv().ok());
 
-    if let Some(paths) = paths {
+    if let Some(picked_images) = picked_images {
         file_picker.receiver = None;
-        for path in paths {
-            if let Some(img) = load_image_as_chat_image(&path) {
+        for picked in picked_images {
+            if let Some(img) = chat_image_from_bytes(picked.filename, picked.bytes) {
                 chat_state.pending_images.push(img);
             }
         }

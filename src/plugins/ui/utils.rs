@@ -259,14 +259,13 @@ pub fn show_image_preview(
     show_texture_preview(ui, &texture);
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub fn load_image_as_chat_image(
-    path: &std::path::Path,
+pub fn chat_image_from_bytes(
+    filename: String,
+    data: Vec<u8>,
 ) -> Option<crate::plugins::ai_chat::ChatImage> {
     use base64::Engine;
 
-    let data = std::fs::read(path).ok()?;
-    let ext = path
+    let ext = std::path::Path::new(&filename)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
@@ -278,11 +277,6 @@ pub fn load_image_as_chat_image(
         "bmp" => "image/bmp",
         _ => "image/png",
     };
-    let filename = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("image")
-        .to_string();
 
     let max_bytes = crate::app_config::MAX_IMAGE_BYTES;
     #[allow(clippy::cast_precision_loss)]
@@ -321,6 +315,19 @@ pub fn load_image_as_chat_image(
         mime_type: mime_type.to_string(),
         base64_data,
     })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn load_image_as_chat_image(
+    path: &std::path::Path,
+) -> Option<crate::plugins::ai_chat::ChatImage> {
+    let data = std::fs::read(path).ok()?;
+    let filename = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("image")
+        .to_string();
+    chat_image_from_bytes(filename, data)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

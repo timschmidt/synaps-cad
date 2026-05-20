@@ -75,11 +75,11 @@ cp web/index.html dist/index.html
 touch dist/.nojekyll
 ```
 
-The web build currently focuses on the editor and 3D renderer. Native desktop integrations such as AI networking, persistence, file dialogs, clipboard image access, and model export are disabled in the browser build.
+The web build supports the editor, 3D renderer, browser image attachment picking via `rfd`, and AI chat through browser HTTP requests. Direct browser calls depend on provider CORS policy, so some providers may require a CORS-enabled custom endpoint or proxy. API keys entered in the web build are handled in the browser. Native desktop integrations such as persistence, clipboard image access, and model export are disabled in the browser build.
 
 ### AI Provider Setup
 
-SynapsCAD uses the [genai](https://crates.io/crates/genai) crate to connect to AI providers — including **local models via [Ollama](https://ollama.com)** for fully offline, private usage (no API key needed). Set the API key for your chosen cloud provider as an environment variable:
+On desktop, SynapsCAD uses the [genai](https://crates.io/crates/genai) crate to connect to AI providers — including **local models via [Ollama](https://ollama.com)** for fully offline, private usage (no API key needed). In the browser build, SynapsCAD uses direct HTTP requests for Anthropic, OpenAI-compatible providers, Gemini, Cohere, and Ollama. Set the API key for your chosen cloud provider as an environment variable on desktop:
 
 | Provider  | Environment Variable |
 | --------- | -------------------- |
@@ -100,7 +100,7 @@ export ANTHROPIC_API_KEY="sk-..."
 cargo run
 ```
 
-When an env var is set, the UI shows it as active. You can also enter or override the key in **⚙ AI Settings** within the app.
+When an env var is set on desktop, the UI shows it as active. You can also enter or override the key in **⚙ AI Settings** within the app.
 
 This opens a window with a 3D viewport on the right and a side panel on the left containing the code editor and AI chat.
 
@@ -123,12 +123,12 @@ SynapsCAD is a single-binary Rust application built on three main pillars:
 | OpenSCAD parsing | [**openscad-rs**](https://github.com/ierror/openscad-rs) | Lossless, resilient OpenSCAD parser                                |
 | CSG rendering    | **csgrs**                                                | Constructive solid geometry — boolean ops, primitives, mesh output |
 | Export           | **lib3mf**                                               | 3MF export with per-part colors; STL and OBJ exported natively     |
-| AI               | **genai**                                                | Unified client for OpenAI / Anthropic / Gemini APIs                |
-| Async            | **Tokio**                                                | Background runtime for AI network calls                            |
+| AI               | **genai** / browser HTTP                                 | Unified desktop client plus WASM-compatible provider calls         |
+| Async            | **Tokio** / browser tasks                                | Background native tasks and `spawn_local` browser requests         |
 
 ### Key Design Decisions
 
-- **Bevy owns the main thread.** The Bevy app loop drives rendering and ECS systems. A separate Tokio runtime is stored as a Bevy `Resource` and used only for spawning async AI tasks.
+- **Bevy owns the main thread.** The Bevy app loop drives rendering and ECS systems. A separate Tokio runtime is stored as a Bevy `Resource` for native async AI tasks; the browser build uses `wasm_bindgen_futures::spawn_local`.
 
 - **`std::sync::mpsc` bridges async to sync.** Background tasks (compilation, AI streaming) send results through channels. Bevy systems poll with non-blocking `try_recv()` each frame, keeping the viewport responsive.
 

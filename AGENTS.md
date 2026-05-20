@@ -21,7 +21,7 @@ poll_compilation_system
     ↓  egui overlay
 Part Labels (@1, @2, ...)
     ↓  system prompt injection
-AI Chat (genai → Anthropic/OpenAI/Gemini/...)
+AI Chat (desktop genai / browser HTTP → Anthropic/OpenAI-compatible/Gemini/Ollama/...)
     ↓  code block extraction
 Code Editor (auto-apply)
 ```
@@ -35,7 +35,7 @@ Code Editor (auto-apply)
 | `CompilationPlugin` | `compilation.rs` | Triggers compilation, spawns mesh entities with `CadModel` + `PartLabel` |
 | `CameraPlugin`      | `camera.rs`      | Orbit/pan/zoom controls, zoom-to-fit, keyboard toggles (G=gizmos, L=labels) |
 | `UiPlugin`          | `ui.rs`          | egui side panel layout, viewport toolbar, label overlays                 |
-| `AiChatPlugin`      | `ai_chat.rs`     | AI streaming chat with context injection                                 |
+| `AiChatPlugin`      | `ai_chat.rs`     | AI chat with context injection; native streaming via genai, browser requests via reqwest |
 | `PersistencePlugin` | `persistence.rs` | Save/load settings and code                                              |
 
 ### Key Files
@@ -174,7 +174,7 @@ cp web/index.html dist/index.html
 touch dist/.nojekyll
 ```
 
-The WASM build currently disables native integrations: AI networking (`genai`/Tokio/reqwest), persistence (`dirs`/filesystem session storage), file dialogs, clipboard image access, model export, and opening external issue URLs. Compilation runs synchronously on the main thread in WASM because standard native threads are unavailable.
+The WASM build supports browser file picking for image attachments via `rfd::AsyncFileDialog` and `FileHandle::read()`. AI chat also runs in WASM using browser `reqwest` requests on `wasm_bindgen_futures::spawn_local`; it reuses the same chat receive, code-apply, verification, and error-recovery systems as native, but returns each browser response as one completed message instead of a streaming `genai` response. Direct provider calls are subject to browser CORS policy, so CORS-enabled custom endpoints or proxies may be required. Native integrations still disabled in WASM include persistence (`dirs`/filesystem session storage), clipboard image access, model export, and opening external issue URLs. Compilation runs synchronously on the main thread in WASM because standard native threads are unavailable.
 
 ### Testing Philosophy
 
@@ -205,6 +205,7 @@ The AI chat pipeline (`ai_chat.rs`) logs the full request (system prompt, messag
 - **AI Settings**: Opened via a ⚙ gear button in the "AI Assistant" header row; rendered as a floating `egui::Window`, not inline.
 - **Custom Endpoint URLs**: Every AI provider has an "Endpoint URL" field in AI Settings. When empty, the provider's default endpoint is used. When set, the custom URL overrides the endpoint for both model listing and chat API calls. Custom URLs are stored per-provider in `AiConfig.custom_urls: HashMap<String, String>` and persisted in `session.json`. The `OLLAMA_HOST` environment variable still works as the default for Ollama. Default placeholder URLs match the genai library's built-in endpoints (e.g. `https://api.openai.com/v1/` for OpenAI, `http://localhost:11434/` for Ollama). For non-Ollama providers with custom URLs, model listing tries the OpenAI-compatible `GET {url}models` endpoint, with fallback to Ollama format.
   - Some custom Claude/OpenAI-compatible endpoints (e.g. LM Studio wrappers) may not return a model list and may encode model routing in the API token or server config. In this case, do not force dropdown model selection or show "Select model in ⚙" warnings just because no models were listed; manual model entry can remain optional.
+  - In the browser build, provider API keys entered in settings are sent from the user's browser. Avoid promising server-side key secrecy for WASM deployments.
   - API tokens are **not mandatory** when a custom endpoint URL is set. Do not show required markers or block usage solely because the API key field is empty in custom-URL mode.
 - **Compile button**: Right-aligned in the "Code" heading row.
 

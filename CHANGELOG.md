@@ -9,10 +9,12 @@ All notable changes to this project will be documented in this file.
 
 - **Web/WASM Build** — SynapsCAD now builds for `wasm32-unknown-unknown` and includes a static `web/index.html` shell for browser hosting.
 - **GitHub Pages Deployment** — added a GitHub Actions workflow that builds the WASM release, generates `wasm-bindgen` web bindings, uploads the static bundle, and deploys it to GitHub Pages.
+- **Browser File Picker** — image attachments now use `rfd` file handles in the browser and read selected files directly from the Web File API.
+- **Browser AI Chat** — the WASM build can now send AI chat requests from the browser using direct HTTP calls for Anthropic, OpenAI-compatible providers, Gemini, Cohere, and Ollama, while reusing existing code application, verification, and error recovery.
 
 ### Changed
 
-- **Platform-specific Dependencies** — native-only integrations such as AI networking, persistence, file dialogs, clipboard image access, model export, and external URL opening are now gated out of the browser build. In the WASM build, model compilation runs synchronously on the main thread.
+- **Platform-specific Dependencies** — native-only integrations such as persistence, clipboard image access, model export, and external URL opening are now gated out of the browser build. In the WASM build, model compilation runs synchronously on the main thread and AI networking uses browser-compatible requests instead of the native `genai`/Tokio streaming path.
 
 
 ## [0.10.1] - 2026-03-26
