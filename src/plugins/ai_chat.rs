@@ -347,7 +347,7 @@ pub struct ChatState {
     /// Messages before this index are displayed but not sent to the AI.
     pub session_start: usize,
     /// When streaming started, used to display elapsed time.
-    pub streaming_start: Option<std::time::Instant>,
+    pub streaming_start: Option<web_time::Instant>,
     /// Set to true when the chat should scroll to the bottom (e.g. on send).
     pub scroll_to_bottom: bool,
 }
@@ -1280,7 +1280,7 @@ fn ai_verify_system(
 
             // Trigger the AI send
             chat_state.is_streaming = true;
-            chat_state.streaming_start = Some(std::time::Instant::now());
+            chat_state.streaming_start = Some(web_time::Instant::now());
             chat_state.verification = VerificationState::Verifying(round);
         }
         VerificationState::ErrorRecovery(err) => {
@@ -1301,7 +1301,7 @@ fn ai_verify_system(
 
             // Trigger AI send to get corrected code
             chat_state.is_streaming = true;
-            chat_state.streaming_start = Some(std::time::Instant::now());
+            chat_state.streaming_start = Some(web_time::Instant::now());
             chat_state.verification = VerificationState::Verifying(0); // Reset round counter
         }
         _ => {}

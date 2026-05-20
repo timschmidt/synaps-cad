@@ -6769,6 +6769,7 @@ dependencies = [
  "tokio",
  "ttf-parser 0.25.1",
  "url",
+ "web-time",
  "winresource",
 ]
 

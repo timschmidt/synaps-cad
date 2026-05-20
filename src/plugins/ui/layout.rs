@@ -565,7 +565,7 @@ fn render_chat_input(
                 });
             chat_state.input_buffer.clear();
             chat_state.is_streaming = true;
-            chat_state.streaming_start = Some(std::time::Instant::now());
+            chat_state.streaming_start = Some(web_time::Instant::now());
             chat_state.scroll_to_bottom = true;
         }
     });

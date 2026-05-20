@@ -241,7 +241,7 @@ fn compile_openscad(
         };
     }
 
-    let t0 = std::time::Instant::now();
+    let t0 = web_time::Instant::now();
     eprintln!("[SynapsCAD] Compiling (fn={fn_value})...");
 
     // Catch panics from dependencies (e.g. spade triangulation)

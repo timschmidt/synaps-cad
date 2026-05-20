@@ -116,7 +116,7 @@ pub struct AppErrors {
 
 pub struct AppError {
     pub(crate) message: String,
-    pub(crate) timestamp: std::time::Instant,
+    pub(crate) timestamp: web_time::Instant,
 }
 
 impl AppErrors {
@@ -124,7 +124,7 @@ impl AppErrors {
     pub fn push(&mut self, message: impl Into<String>) {
         self.errors.push(AppError {
             message: message.into(),
-            timestamp: std::time::Instant::now(),
+            timestamp: web_time::Instant::now(),
         });
     }
 }

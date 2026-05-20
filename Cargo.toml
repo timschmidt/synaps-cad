@@ -20,6 +20,7 @@ csgrs = { git = "https://github.com/timschmidt/csgrs", rev = "dca6d01", features
 boolmesh = "0.1.5"
 nalgebra = "0.34"
 url = "2"
+web-time = "1"
 
 # OpenSCAD parser
 openscad-rs = "0.1.0"
