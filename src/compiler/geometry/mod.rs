@@ -1,13 +1,11 @@
 use std::fmt;
 
-use csgrs::bmesh::BMesh;
 use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
 use csgrs::mesh::plane::Plane;
-use csgrs::sketch::Sketch;
-use nalgebra::Vector3;
-
-use crate::compiler::geometry::conversions::{bmesh_to_csg_mesh, csg_mesh_to_bmesh};
+use csgrs::Real;
+use csgrs::Profile;
+use hyperlattice::Vector3;
 
 #[derive(Clone, Copy, Debug)]
 pub enum BoolOp {
@@ -26,12 +24,9 @@ pub enum TransformKind {
 
 #[derive(Clone)]
 pub enum Shape {
-    Mesh3D(Box<BMesh<()>>),
-    Sketch2D(Sketch<()>),
-    /// Render-only fallback: `CsgMesh` that failed manifold creation.
-    /// Can be rendered directly but boolean ops will degrade to empty.
-    FallbackMesh(CsgMesh<()>),
-    /// A boolean operation panicked — propagate failure to avoid cascading panics.
+    Mesh3D(CsgMesh<()>),
+    Sketch2D(Profile<()>),
+    /// Boolean/transform operations failed with this error.
     Failed(String),
 }
 
@@ -40,7 +35,6 @@ impl fmt::Debug for Shape {
         match self {
             Self::Mesh3D(_) => write!(f, "Shape::Mesh3D"),
             Self::Sketch2D(_) => write!(f, "Shape::Sketch2D"),
-            Self::FallbackMesh(_) => write!(f, "Shape::FallbackMesh"),
             Self::Failed(e) => write!(f, "Shape::Failed({e})"),
         }
     }
@@ -48,37 +42,21 @@ impl fmt::Debug for Shape {
 
 impl Shape {
     /// Create a 3D shape from a `CsgMesh` primitive.
-    /// Falls back to direct polygon rendering if manifold creation fails (still renders,
-    /// but boolean ops on it may produce artifacts).
     pub fn from_csg_mesh(mesh: CsgMesh<()>) -> Self {
-        match csg_mesh_to_bmesh(&mesh) {
-            Ok(bmesh) => Self::Mesh3D(Box::new(bmesh)),
-            Err(e) => {
-                if cfg!(debug_assertions) {
-                    eprintln!("[DEBUG] Manifold failed ({e}), using polygon fallback");
-                }
-                Self::FallbackMesh(mesh)
-            }
-        }
+        Self::Mesh3D(mesh)
     }
 
-    /// Convert to `BMesh` for boolean operations.
-    pub fn into_bmesh(self) -> BMesh<()> {
-        match self {
-            Self::Mesh3D(b) => *b,
-            Self::Sketch2D(s) => BMesh::from(s.extrude(0.01)),
-            Self::FallbackMesh(_) | Self::Failed(_) => BMesh::new(),
-        }
-    }
-
-    /// Extract polygon data for hull computation (converts back to `CsgMesh`).
+    /// Extract polygon mesh data for downstream boolean + hull operations.
     pub fn into_csg_mesh(self) -> CsgMesh<()> {
         match self {
-            Self::Mesh3D(b) => bmesh_to_csg_mesh(&b),
-            Self::Sketch2D(s) => s.extrude(0.01),
-            Self::FallbackMesh(m) => m,
+            Self::Mesh3D(m) => m,
+            Self::Sketch2D(s) => s.extrude(Self::to_real(0.01)),
             Self::Failed(_) => CsgMesh::new(),
         }
+    }
+
+    fn to_real(value: f64) -> Real {
+        Real::try_from(value).ok().unwrap_or_else(Real::zero)
     }
 
     #[must_use]
@@ -91,7 +69,7 @@ impl Shape {
         }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.union(&b)),
-            (a, b) => Self::bool_op_with_fallback(a, b, BoolOp::Union),
+            (a, b) => Self::from_csg_mesh(csg_bool(a.into_csg_mesh(), b.into_csg_mesh(), BoolOp::Union)),
         }
     }
 
@@ -105,7 +83,7 @@ impl Shape {
         }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.difference(&b)),
-            (a, b) => Self::bool_op_with_fallback(a, b, BoolOp::Difference),
+            (a, b) => Self::from_csg_mesh(csg_bool(a.into_csg_mesh(), b.into_csg_mesh(), BoolOp::Difference)),
         }
     }
 
@@ -119,100 +97,62 @@ impl Shape {
         }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.intersection(&b)),
-            (a, b) => Self::bool_op_with_fallback(a, b, BoolOp::Intersection),
+            (a, b) => Self::from_csg_mesh(csg_bool(a.into_csg_mesh(), b.into_csg_mesh(), BoolOp::Intersection)),
         }
-    }
-
-    /// Try boolmesh first; on panic, fall back to csgrs BSP-tree booleans.
-    fn bool_op_with_fallback(a: Self, b: Self, op: BoolOp) -> Self {
-        let a_csg = a.into_csg_mesh();
-        let b_csg = b.into_csg_mesh();
-
-        // Try boolmesh path: CsgMesh → BMesh → boolean → Shape
-        let a_bmesh = csg_mesh_to_bmesh(&a_csg);
-        let b_bmesh = csg_mesh_to_bmesh(&b_csg);
-
-        if let (Ok(ab), Ok(bb)) = (a_bmesh, b_bmesh) {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match op {
-                BoolOp::Union => ab.union(&bb),
-                BoolOp::Difference => ab.difference(&bb),
-                BoolOp::Intersection => ab.intersection(&bb),
-            }));
-            if let Ok(r) = result {
-                return Self::Mesh3D(Box::new(r));
-            }
-            eprintln!("[SynapsCAD] boolmesh {op:?} panicked, falling back to BSP");
-        } else if cfg!(debug_assertions) {
-            eprintln!("[DEBUG] BMesh conversion failed, using BSP for {op:?}");
-        }
-
-        // Fallback: csgrs BSP-tree booleans
-        let result_csg = match op {
-            BoolOp::Union => a_csg.union(&b_csg),
-            BoolOp::Difference => a_csg.difference(&b_csg),
-            BoolOp::Intersection => a_csg.intersection(&b_csg),
-        };
-        Self::from_csg_mesh(result_csg)
     }
 
     #[must_use]
     pub fn translate(self, x: f64, y: f64, z: f64) -> Self {
+        let (x, y, z) = (Self::to_real(x), Self::to_real(y), Self::to_real(z));
+        let zero = Self::to_real(0.0);
+        let epsilon = Self::to_real(1e-12);
         match self {
-            Self::Mesh3D(m) => Self::bmesh_transform_with_fallback(*m, |m| m.translate(x, y, z)),
+            Self::Mesh3D(m) => Self::Mesh3D(m.translate(x, y, z)),
             Self::Sketch2D(s) => {
-                if z.abs() < 1e-12 {
-                    Self::Sketch2D(s.translate(x, y, 0.0))
+                if z.abs() < epsilon {
+                    Self::Sketch2D(s.translate(x, y, zero))
                 } else {
-                    Self::from_csg_mesh(s.extrude(0.01).translate(x, y, z))
+                    Self::from_csg_mesh(s.extrude(Self::to_real(0.01)).translate(x, y, z))
                 }
             }
-            Self::FallbackMesh(m) => Self::FallbackMesh(m.translate(x, y, z)),
             Self::Failed(e) => Self::Failed(e),
         }
     }
 
     #[must_use]
     pub fn rotate(self, x: f64, y: f64, z: f64) -> Self {
+        let (x, y, z) = (Self::to_real(x), Self::to_real(y), Self::to_real(z));
+        let zero = Self::to_real(0.0);
+        let epsilon = Self::to_real(1e-12);
         match self {
-            Self::Mesh3D(m) => Self::bmesh_transform_with_fallback(*m, |m| m.rotate(x, y, z)),
+            Self::Mesh3D(m) => Self::Mesh3D(m.rotate(x, y, z)),
             Self::Sketch2D(s) => {
-                if x.abs() < 1e-12 && y.abs() < 1e-12 {
-                    Self::Sketch2D(s.rotate(0.0, 0.0, z))
+                if x.abs() < epsilon && y.abs() < epsilon {
+                    Self::Sketch2D(s.rotate(zero.clone(), zero, z))
                 } else {
-                    Self::from_csg_mesh(s.extrude(0.01).rotate(x, y, z))
+                    Self::from_csg_mesh(s.extrude(Self::to_real(0.01)).rotate(x, y, z))
                 }
             }
-            Self::FallbackMesh(m) => Self::FallbackMesh(m.rotate(x, y, z)),
             Self::Failed(e) => Self::Failed(e),
         }
     }
 
     #[must_use]
     pub fn scale(self, sx: f64, sy: f64, sz: f64) -> Self {
+        let (sx, sy, sz) = (Self::to_real(sx), Self::to_real(sy), Self::to_real(sz));
+        let one = Self::to_real(1.0);
+        let epsilon = Self::to_real(1e-12);
         match self {
-            Self::Mesh3D(m) => Self::bmesh_transform_with_fallback(*m, |m| m.scale(sx, sy, sz)),
+            Self::Mesh3D(m) => Self::Mesh3D(m.scale(sx, sy, sz)),
             Self::Sketch2D(s) => {
-                if (sz - 1.0).abs() < 1e-12 {
-                    Self::Sketch2D(s.scale(sx, sy, 1.0))
+                if (sz.clone() - one.clone()).abs() < epsilon {
+                    Self::Sketch2D(s.scale(sx, sy, one.clone()))
                 } else {
-                    Self::from_csg_mesh(s.extrude(0.01).scale(sx, sy, sz))
+                    Self::from_csg_mesh(s.extrude(Self::to_real(0.01)).scale(sx, sy, sz))
                 }
             }
-            Self::FallbackMesh(m) => Self::FallbackMesh(m.scale(sx, sy, sz)),
             Self::Failed(e) => Self::Failed(e),
         }
-    }
-
-    /// Try a `BMesh` transform; on panic fall back to `CsgMesh` transform.
-    fn bmesh_transform_with_fallback(m: BMesh<()>, f: impl FnOnce(BMesh<()>) -> BMesh<()>) -> Self {
-        let csg_backup = bmesh_to_csg_mesh(&m);
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(m))).map_or_else(
-            |_| {
-                eprintln!("[SynapsCAD] BMesh transform panicked, falling back to CsgMesh");
-                Self::FallbackMesh(csg_backup)
-            },
-            |result| Self::Mesh3D(Box::new(result)),
-        )
     }
 
     #[must_use]
@@ -221,11 +161,17 @@ impl Shape {
         if len < 1e-12 {
             return self;
         }
-        let plane = Plane::from_normal(Vector3::new(nx, ny, nz), 0.0);
+        let plane = Plane::from_normal(
+            Vector3::new([
+                Self::to_real(nx),
+                Self::to_real(ny),
+                Self::to_real(nz),
+            ]),
+            Real::zero(),
+        );
         match self {
-            Self::Mesh3D(m) => Self::bmesh_transform_with_fallback(*m, |m| m.mirror(plane)),
+            Self::Mesh3D(m) => Self::Mesh3D(m.mirror(plane)),
             Self::Sketch2D(s) => Self::Sketch2D(s.mirror(plane)),
-            Self::FallbackMesh(m) => Self::FallbackMesh(m.mirror(plane)),
             Self::Failed(e) => Self::Failed(e),
         }
     }
@@ -234,11 +180,18 @@ impl Shape {
     #[allow(dead_code)]
     pub fn center(self) -> Self {
         match self {
-            Self::Mesh3D(m) => Self::Mesh3D(Box::new(m.center())),
+            Self::Mesh3D(m) => Self::Mesh3D(m.center()),
             Self::Sketch2D(s) => Self::Sketch2D(s.center()),
-            Self::FallbackMesh(m) => Self::FallbackMesh(m.center()),
             Self::Failed(e) => Self::Failed(e),
         }
+    }
+}
+
+fn csg_bool(lhs: CsgMesh<()>, rhs: CsgMesh<()>, op: BoolOp) -> CsgMesh<()> {
+    match op {
+        BoolOp::Union => lhs.union(&rhs),
+        BoolOp::Difference => lhs.difference(&rhs),
+        BoolOp::Intersection => lhs.intersection(&rhs),
     }
 }
 

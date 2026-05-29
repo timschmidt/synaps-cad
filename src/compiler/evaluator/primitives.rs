@@ -1,16 +1,29 @@
 use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
+use csgrs::Real;
 use csgrs::polygon::Polygon;
-use csgrs::sketch::Sketch;
+use csgrs::Profile;
 use csgrs::vertex::Vertex;
-use nalgebra::Point3;
-use nalgebra::Vector3;
+use hyperlattice::{Point3, Vector3};
+use nalgebra::Vector3 as NalgebraVector3;
 
 use super::{Evaluator, Value};
 use crate::compiler::geometry::Shape;
 use crate::compiler::rendering::fonts::{
     apply_text_alignment, render_text_with_direction, resolve_font_data,
 };
+
+fn to_real(value: f64) -> Real {
+    Real::try_from(value).ok().unwrap_or_else(Real::zero)
+}
+
+fn nalgebra_vector_to_profile_normal(vector: &NalgebraVector3<f64>) -> Vector3 {
+    Vector3::new([to_real(vector[0]), to_real(vector[1]), to_real(vector[2])])
+}
+
+fn point_from_f64(point: &[f64; 3]) -> Point3 {
+    Point3::new(to_real(point[0]), to_real(point[1]), to_real(point[2]))
+}
 
 impl Evaluator {
     // =======================================================================
@@ -24,7 +37,7 @@ impl Evaluator {
 
         let mesh = match size_val {
             Value::Number(s) => {
-                let m = CsgMesh::cube(*s, None);
+                let m = CsgMesh::cube(to_real(*s), ());
                 if center { m.center() } else { m }
             }
             Value::List(dims) => {
@@ -38,7 +51,8 @@ impl Evaluator {
                         nums.get(2).copied().unwrap_or(1.0),
                     ),
                 };
-                let m = CsgMesh::cube(1.0, None).scale(x, y, z);
+                let m = CsgMesh::cube(to_real(1.0), ())
+                    .scale(to_real(x), to_real(y), to_real(z));
                 if center { m.center() } else { m }
             }
             _ => return None,
@@ -57,7 +71,7 @@ impl Evaluator {
         let stacks = slices / 2;
 
         Some(Shape::from_csg_mesh(CsgMesh::sphere(
-            r, slices, stacks, None,
+            to_real(r), slices, stacks, (),
         )))
     }
 
@@ -84,9 +98,9 @@ impl Evaluator {
         // For cones (r1 != r2): use CsgMesh::frustum which correctly
         // handles zero-radius (emits triangles, not degenerate quads).
         let m = if (r1 - r2).abs() < 1e-12 {
-            CsgMesh::cylinder(r1, h, slices, None)
+            CsgMesh::cylinder(to_real(r1), to_real(h), slices, ())
         } else {
-            CsgMesh::frustum(r1, r2, h, slices, None)
+            CsgMesh::frustum(to_real(r1), to_real(r2), to_real(h), slices, ())
         };
         let m = if center { m.center() } else { m };
 
@@ -161,29 +175,31 @@ impl Evaluator {
                 continue;
             }
             // Compute face normal
-            let v0 = Vector3::new(pts[0][0], pts[0][1], pts[0][2]);
-            let v1 = Vector3::new(pts[1][0], pts[1][1], pts[1][2]);
-            let v2 = Vector3::new(pts[2][0], pts[2][1], pts[2][2]);
-            let normal = (v1 - v0).cross(&(v2 - v0)).normalize();
+            let v0 = NalgebraVector3::new(pts[0][0], pts[0][1], pts[0][2]);
+            let v1 = NalgebraVector3::new(pts[1][0], pts[1][1], pts[1][2]);
+            let v2 = NalgebraVector3::new(pts[2][0], pts[2][1], pts[2][2]);
+            let normal = nalgebra_vector_to_profile_normal(
+                &(v1 - v0).cross(&(v2 - v0)).normalize(),
+            );
 
             if pts.len() == 3 {
                 let verts: Vec<_> = pts
                     .iter()
-                    .map(|p| Vertex::new(Point3::new(p[0], p[1], p[2]), normal))
+                    .map(|p| Vertex::new(point_from_f64(p), normal.clone()))
                     .collect();
-                polygons.push(Polygon::new(verts, None));
+                polygons.push(Polygon::new(verts, ()));
             } else {
                 // Fan-triangulate N-gons (N>3)
-                let p0 = Point3::new(pts[0][0], pts[0][1], pts[0][2]);
+                let p0 = point_from_f64(pts[0]);
                 for i in 1..pts.len() - 1 {
-                    let p1 = Point3::new(pts[i][0], pts[i][1], pts[i][2]);
-                    let p2 = Point3::new(pts[i + 1][0], pts[i + 1][1], pts[i + 1][2]);
+                    let p1 = point_from_f64(pts[i]);
+                    let p2 = point_from_f64(pts[i + 1]);
                     let verts = vec![
-                        Vertex::new(p0, normal),
-                        Vertex::new(p1, normal),
-                        Vertex::new(p2, normal),
+                        Vertex::new(p0.clone(), normal.clone()),
+                        Vertex::new(p1, normal.clone()),
+                        Vertex::new(p2, normal.clone()),
                     ];
-                    polygons.push(Polygon::new(verts, None));
+                    polygons.push(Polygon::new(verts, ()));
                 }
             }
         }
@@ -192,7 +208,7 @@ impl Evaluator {
             return None;
         }
         Some(Shape::from_csg_mesh(CsgMesh::from_polygons(
-            &polygons, None,
+            &polygons, (),
         )))
     }
 
@@ -207,7 +223,7 @@ impl Evaluator {
             .unwrap_or(1.0);
 
         let slices = self.resolve_fn_with_radius(args, Some(r));
-        Some(Shape::Sketch2D(Sketch::circle(r, slices, None)))
+        Some(Shape::Sketch2D(Profile::circle(to_real(r), slices, ())))
     }
 
     #[allow(clippy::unused_self)]
@@ -216,12 +232,12 @@ impl Evaluator {
         let center = Self::get_arg_bool(args, "center", 1, false);
 
         let sketch = match size_val {
-            Value::Number(s) => Sketch::square(*s, None),
+            Value::Number(s) => Profile::square(to_real(*s), ()),
             Value::List(dims) => {
                 let nums: Vec<f64> = dims.iter().filter_map(Value::as_number).collect();
                 let w = nums.first().copied().unwrap_or(1.0);
                 let h = nums.get(1).copied().unwrap_or(w);
-                Sketch::rectangle(w, h, None)
+                Profile::rectangle(to_real(w), to_real(h), ())
             }
             _ => return None,
         };
@@ -250,7 +266,11 @@ impl Evaluator {
         if points.len() < 3 {
             return None;
         }
-        Some(Shape::Sketch2D(Sketch::polygon(&points, None)))
+        let points = points
+            .iter()
+            .map(|p| [to_real(p[0]), to_real(p[1])])
+            .collect::<Vec<_>>();
+        Some(Shape::Sketch2D(Profile::polygon(&points, ())))
     }
 
     #[must_use]

@@ -1,12 +1,16 @@
-use csgrs::bmesh::BMesh;
 use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
-use csgrs::sketch::Sketch;
+use csgrs::Real;
+use csgrs::Profile;
 use openscad_rs::ast::Statement;
 
 use super::{Evaluator, Value};
-use crate::compiler::geometry::conversions::{axis_angle_to_euler, bmesh_to_csg_mesh};
+use crate::compiler::geometry::conversions::axis_angle_to_euler;
 use crate::compiler::geometry::{Shape, TransformKind};
+
+fn to_real(value: f64) -> Real {
+    Real::try_from(value).ok().unwrap_or_else(Real::zero)
+}
 
 impl Evaluator {
     pub fn eval_transform(
@@ -142,7 +146,7 @@ impl Evaluator {
             // Twisted/scaled extrusion: approximate by layered slices
             self.twisted_extrude(&sketch, height, twist, scale_val, slices)
         } else {
-            sketch.extrude(height)
+            sketch.extrude(to_real(height))
         };
 
         let mesh = if center { mesh.center() } else { mesh };
@@ -163,7 +167,7 @@ impl Evaluator {
         }
 
         let sketch = self.shapes_to_sketch(&child_shapes)?;
-        let mesh = match sketch.revolve(angle, slices) {
+        let mesh = match sketch.revolve(to_real(angle), slices) {
             Ok(m) => m,
             Err(e) => {
                 self.warnings.push(format!("rotate_extrude() error: {e:?}"));
@@ -174,14 +178,14 @@ impl Evaluator {
     }
 
     /// Convert shapes to a single Sketch. 3D meshes are dropped with a warning.
-    pub fn shapes_to_sketch(&mut self, shapes: &[Shape]) -> Option<Sketch<()>> {
-        let mut result: Option<Sketch<()>> = None;
+    pub fn shapes_to_sketch(&mut self, shapes: &[Shape]) -> Option<Profile<()>> {
+        let mut result: Option<Profile<()>> = None;
         for shape in shapes {
             match shape {
                 Shape::Sketch2D(s) => {
                     result = Some(result.map_or_else(|| s.clone(), |r| r.union(s)));
                 }
-                Shape::Mesh3D(_) | Shape::FallbackMesh(_) => {
+                Shape::Mesh3D(_) => {
                     self.warnings
                         .push("3D mesh child inside extrude, skipping".into());
                 }
@@ -198,14 +202,14 @@ impl Evaluator {
     #[allow(clippy::unused_self, clippy::cast_precision_loss)]
     pub fn twisted_extrude(
         &self,
-        sketch: &Sketch<()>,
+        sketch: &Profile<()>,
         height: f64,
         twist: f64,
         end_scale: f64,
         n_slices: usize,
     ) -> CsgMesh<()> {
         let n = n_slices.max(2);
-        let mut result: Option<BMesh<()>> = None;
+        let mut result: Option<CsgMesh<()>> = None;
 
         for i in 0..n {
             let t0 = i as f64 / n as f64;
@@ -228,18 +232,21 @@ impl Evaluator {
             let avg_angle = f64::midpoint(angle0, angle1);
 
             let layer = sketch
-                .extrude(layer_h)
-                .scale(avg_scale, avg_scale, 1.0)
-                .rotate(0.0, 0.0, avg_angle)
-                .translate(0.0, 0.0, z0);
+                .extrude(to_real(layer_h))
+                .scale(
+                    to_real(avg_scale),
+                    to_real(avg_scale),
+                    Real::one(),
+                )
+                .rotate(Real::zero(), Real::zero(), to_real(avg_angle))
+                .translate(Real::zero(), Real::zero(), to_real(z0));
 
-            let layer_bmesh = BMesh::from(layer);
             result = Some(match result {
-                Some(r) => r.union(&layer_bmesh),
-                None => layer_bmesh,
+                Some(r) => r.union(&layer),
+                None => layer,
             });
         }
 
-        result.map_or_else(|| CsgMesh::cube(0.001, None), |b| bmesh_to_csg_mesh(&b))
+        result.unwrap_or_else(|| CsgMesh::cube(to_real(0.001), ()))
     }
 }

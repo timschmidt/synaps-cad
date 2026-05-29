@@ -1,7 +1,6 @@
 use super::*;
-use crate::compiler::geometry::conversions::{bmesh_to_csg_mesh, bmesh_to_mesh_data};
+use crate::compiler::geometry::conversions::csg_mesh_to_mesh_data;
 use crate::compiler::{CompilationResult, MeshData, compile_scad_code};
-use csgrs::bmesh::BMesh;
 use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
 use std::sync::Arc;
@@ -259,26 +258,21 @@ rotate(a = 45, v = [1, 0, 0])
 }
 
 fn compile_to_csg_mesh(code: &str) -> CsgMesh<()> {
-    bmesh_to_csg_mesh(&compile_to_bmesh(code))
-}
-
-fn compile_to_bmesh(code: &str) -> BMesh<()> {
     let source_file = openscad_rs::parse(code).expect("parse error");
     let mut evaluator = Evaluator::new();
     let shapes = evaluator.eval_source_file(&source_file);
     assert!(!shapes.is_empty(), "No geometry produced");
     let mut iter = shapes.into_iter();
     let (first, _) = iter.next().unwrap();
-    let mut result = first.into_bmesh();
+    let mut result = first.into_csg_mesh();
     for (shape, _) in iter {
-        result = result.union(&shape.into_bmesh());
+        result = result.union(&shape.into_csg_mesh());
     }
     result
 }
 
 fn csg_mesh_to_mesh_data_local(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
-    let bmesh = BMesh::from(mesh.clone());
-    bmesh_to_mesh_data(&bmesh)
+    csg_mesh_to_mesh_data(mesh)
 }
 
 fn compile_to_merged_mesh(code: &str) -> MeshData {

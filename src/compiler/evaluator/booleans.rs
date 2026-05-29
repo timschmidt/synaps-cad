@@ -1,3 +1,4 @@
+use csgrs::Real;
 use csgrs::mesh::Mesh as CsgMesh;
 use openscad_rs::ast::Statement;
 
@@ -5,6 +6,10 @@ use super::{Evaluator, Value};
 use crate::compiler::geometry::{BoolOp, Shape};
 
 impl Evaluator {
+    fn to_real(value: f64) -> Real {
+        Real::try_from(value).ok().unwrap_or_else(Real::zero)
+    }
+
     #[allow(clippy::missing_panics_doc)]
     pub fn eval_boolean_op(&mut self, children: &[Statement], op: BoolOp) -> Option<Shape> {
         let child_shapes = self.eval_children(children);
@@ -65,20 +70,20 @@ impl Evaluator {
 
         if let Some(r_val) = r {
             if r_val.abs() > 1e-12 {
-                Some(Shape::Sketch2D(sketch.offset_rounded(r_val)))
+                Some(Shape::Sketch2D(sketch.offset_rounded(Self::to_real(r_val))))
             } else {
                 Some(Shape::Sketch2D(sketch))
             }
         } else if let Some(d_val) = delta {
             if d_val.abs() > 1e-12 {
-                Some(Shape::Sketch2D(sketch.offset(d_val)))
+                Some(Shape::Sketch2D(sketch.offset(Self::to_real(d_val))))
             } else {
                 Some(Shape::Sketch2D(sketch))
             }
         } else {
             let d = Self::get_arg_number(args, "", 0).unwrap_or(0.0);
             if d.abs() > 1e-12 {
-                Some(Shape::Sketch2D(sketch.offset(d)))
+                Some(Shape::Sketch2D(sketch.offset(Self::to_real(d))))
             } else {
                 Some(Shape::Sketch2D(sketch))
             }
@@ -95,7 +100,7 @@ impl Evaluator {
             let mesh = shape.into_csg_mesh();
             all_polygons.extend(mesh.polygons);
         }
-        let combined = CsgMesh::from_polygons(&all_polygons, None);
+        let combined = CsgMesh::from_polygons(&all_polygons, ());
         Some(Shape::from_csg_mesh(combined.convex_hull()))
     }
 

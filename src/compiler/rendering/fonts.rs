@@ -1,5 +1,6 @@
 use csgrs::csg::CSG;
-use csgrs::sketch::Sketch;
+use csgrs::Profile;
+use csgrs::Real;
 
 /// Bundled Liberation Sans Regular font data.
 const LIBERATION_SANS_REGULAR: &[u8] =
@@ -123,7 +124,11 @@ fn search_font_dir(
 }
 
 /// Apply halign/valign offsets to a text sketch by computing its bounding box.
-pub fn apply_text_alignment(sketch: Sketch<()>, halign: &str, valign: &str) -> Sketch<()> {
+fn to_real(value: f64) -> Real {
+    Real::try_from(value).ok().unwrap_or_else(Real::zero)
+}
+
+pub fn apply_text_alignment(sketch: Profile<()>, halign: &str, valign: &str) -> Profile<()> {
     // Compute bounding box by triangulating and scanning vertices
     let tris = sketch.triangulate();
     if tris.is_empty() {
@@ -136,10 +141,12 @@ pub fn apply_text_alignment(sketch: Sketch<()>, halign: &str, valign: &str) -> S
     let mut max_y = f64::MIN;
     for tri in &tris {
         for pt in tri {
-            min_x = min_x.min(pt.x);
-            max_x = max_x.max(pt.x);
-            min_y = min_y.min(pt.y);
-            max_y = max_y.max(pt.y);
+            let x = pt.x.to_f64_lossy().unwrap_or(0.0);
+            let y = pt.y.to_f64_lossy().unwrap_or(0.0);
+            min_x = min_x.min(x);
+            max_x = max_x.max(x);
+            min_y = min_y.min(y);
+            max_y = max_y.max(y);
         }
     }
 
@@ -162,7 +169,7 @@ pub fn apply_text_alignment(sketch: Sketch<()>, halign: &str, valign: &str) -> S
     if dx.abs() < 1e-12 && dy.abs() < 1e-12 {
         sketch
     } else {
-        sketch.translate(dx, dy, 0.0)
+        sketch.translate(to_real(dx), to_real(dy), Real::zero())
     }
 }
 
@@ -176,7 +183,7 @@ pub fn render_text_with_direction(
     size: f64,
     spacing: f64,
     direction: &str,
-) -> Sketch<()> {
+) -> Profile<()> {
     // Normalize direction: OpenSCAD accepts "ltr", "rtl", "ttb", "btt"
     // OpenSCAD uses HarfBuzz which matches direction by first character:
     // 'r' → RTL, 't' → TTB, 'b' → BTT, anything else → LTR
@@ -188,7 +195,7 @@ pub fn render_text_with_direction(
     };
 
     let Ok(face) = ttf_parser::Face::parse(font_data, 0) else {
-        return Sketch::new();
+        return Profile::new();
     };
 
     let upem = f64::from(face.units_per_em());
@@ -231,7 +238,7 @@ pub fn render_text_with_direction(
         text.chars().collect()
     };
 
-    let mut combined: Option<Sketch<()>> = None;
+    let mut combined: Option<Profile<()>> = None;
     let mut cursor = 0.0_f64;
 
     for ch in &chars {
@@ -266,15 +273,19 @@ pub fn render_text_with_direction(
             .is_some();
 
         if has_outline {
-            let glyph = Sketch::text(&ch.to_string(), font_data, corrected_size, None);
+            let glyph = Profile::text(&ch.to_string(), font_data, to_real(corrected_size), ());
             let positioned = if is_vertical {
                 // TTB/BTT: top-to-bottom layout. Text extends downward from y≈0.
                 // Shift baseline down by ascender so the ascent line is at y=0.
                 // Center character horizontally.
-                glyph.translate(-advance / 2.0, -(cursor + ascender), 0.0)
+                glyph.translate(
+                    to_real(-advance / 2.0),
+                    to_real(-(cursor + ascender)),
+                    Real::zero(),
+                )
             } else {
                 // LTR (and RTL after reversal): left-to-right from x=0.
-                glyph.translate(cursor, 0.0, 0.0)
+                glyph.translate(to_real(cursor), Real::zero(), Real::zero())
             };
 
             combined = Some(match combined {
@@ -291,5 +302,5 @@ pub fn render_text_with_direction(
         }
     }
 
-    combined.unwrap_or_else(Sketch::new)
+    combined.unwrap_or_else(Profile::new)
 }
