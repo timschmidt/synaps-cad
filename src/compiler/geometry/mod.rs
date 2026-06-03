@@ -1,10 +1,10 @@
 use std::fmt;
 
+use csgrs::Profile;
+use csgrs::Real;
 use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
 use csgrs::mesh::plane::Plane;
-use csgrs::Real;
-use csgrs::Profile;
 use hyperlattice::Vector3;
 
 #[derive(Clone, Copy, Debug)]
@@ -69,7 +69,11 @@ impl Shape {
         }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.union(&b)),
-            (a, b) => Self::from_csg_mesh(csg_bool(a.into_csg_mesh(), b.into_csg_mesh(), BoolOp::Union)),
+            (a, b) => Self::from_csg_mesh(csg_bool(
+                a.into_csg_mesh(),
+                b.into_csg_mesh(),
+                BoolOp::Union,
+            )),
         }
     }
 
@@ -83,7 +87,11 @@ impl Shape {
         }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.difference(&b)),
-            (a, b) => Self::from_csg_mesh(csg_bool(a.into_csg_mesh(), b.into_csg_mesh(), BoolOp::Difference)),
+            (a, b) => Self::from_csg_mesh(csg_bool(
+                a.into_csg_mesh(),
+                b.into_csg_mesh(),
+                BoolOp::Difference,
+            )),
         }
     }
 
@@ -97,7 +105,11 @@ impl Shape {
         }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.intersection(&b)),
-            (a, b) => Self::from_csg_mesh(csg_bool(a.into_csg_mesh(), b.into_csg_mesh(), BoolOp::Intersection)),
+            (a, b) => Self::from_csg_mesh(csg_bool(
+                a.into_csg_mesh(),
+                b.into_csg_mesh(),
+                BoolOp::Intersection,
+            )),
         }
     }
 
@@ -162,11 +174,7 @@ impl Shape {
             return self;
         }
         let plane = Plane::from_normal(
-            Vector3::new([
-                Self::to_real(nx),
-                Self::to_real(ny),
-                Self::to_real(nz),
-            ]),
+            Vector3::new([Self::to_real(nx), Self::to_real(ny), Self::to_real(nz)]),
             Real::zero(),
         );
         match self {

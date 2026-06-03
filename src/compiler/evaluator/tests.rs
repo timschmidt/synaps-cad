@@ -993,6 +993,20 @@ color([0.2, 0.4, 0.8]) translate([40, 0, 0]) cylinder(h=10, r=5, $fn=12);
         CompilationResult::Success { parts, .. } => {
             assert_eq!(parts.len(), 3);
             assert_eq!(parts[0].color, Some([1.0, 0.0, 0.0]));
+            assert!(
+                parts[1]
+                    .positions
+                    .iter()
+                    .all(|position| (15.0..=25.0).contains(&position[0])),
+                "translated sphere should export translated x coordinates"
+            );
+            assert!(
+                parts[2]
+                    .positions
+                    .iter()
+                    .all(|position| (35.0..=45.0).contains(&position[0])),
+                "translated cylinder should export translated x coordinates"
+            );
         }
         CompilationResult::Error(e) => panic!("Color test failed: {e}"),
         CompilationResult::Canceled => panic!("Compilation was unexpectedly canceled"),

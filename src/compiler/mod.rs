@@ -1,6 +1,6 @@
+use csgrs::Real;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use csgrs::Real;
 
 fn to_real(value: f64) -> Real {
     Real::try_from(value).ok().unwrap_or_else(Real::zero)

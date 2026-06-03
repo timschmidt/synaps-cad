@@ -1,8 +1,8 @@
+use csgrs::Profile;
+use csgrs::Real;
 use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
-use csgrs::Real;
 use csgrs::polygon::Polygon;
-use csgrs::Profile;
 use csgrs::vertex::Vertex;
 use hyperlattice::{Point3, Vector3};
 use nalgebra::Vector3 as NalgebraVector3;
@@ -51,8 +51,7 @@ impl Evaluator {
                         nums.get(2).copied().unwrap_or(1.0),
                     ),
                 };
-                let m = CsgMesh::cube(to_real(1.0), ())
-                    .scale(to_real(x), to_real(y), to_real(z));
+                let m = CsgMesh::cube(to_real(1.0), ()).scale(to_real(x), to_real(y), to_real(z));
                 if center { m.center() } else { m }
             }
             _ => return None,
@@ -71,7 +70,10 @@ impl Evaluator {
         let stacks = slices / 2;
 
         Some(Shape::from_csg_mesh(CsgMesh::sphere(
-            to_real(r), slices, stacks, (),
+            to_real(r),
+            slices,
+            stacks,
+            (),
         )))
     }
 
@@ -178,9 +180,8 @@ impl Evaluator {
             let v0 = NalgebraVector3::new(pts[0][0], pts[0][1], pts[0][2]);
             let v1 = NalgebraVector3::new(pts[1][0], pts[1][1], pts[1][2]);
             let v2 = NalgebraVector3::new(pts[2][0], pts[2][1], pts[2][2]);
-            let normal = nalgebra_vector_to_profile_normal(
-                &(v1 - v0).cross(&(v2 - v0)).normalize(),
-            );
+            let normal =
+                nalgebra_vector_to_profile_normal(&(v1 - v0).cross(&(v2 - v0)).normalize());
 
             if pts.len() == 3 {
                 let verts: Vec<_> = pts
@@ -207,9 +208,7 @@ impl Evaluator {
         if polygons.is_empty() {
             return None;
         }
-        Some(Shape::from_csg_mesh(CsgMesh::from_polygons(
-            &polygons, (),
-        )))
+        Some(Shape::from_csg_mesh(CsgMesh::from_polygons(&polygons, ())))
     }
 
     // =======================================================================

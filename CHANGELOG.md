@@ -256,14 +256,14 @@ All notable changes to this project will be documented in this file.
 
 - `intersection_for` now correctly intersects all iteration results (was incorrectly treated as `for`/union)
 - Boolean operation panics no longer cascade — failed parts are skipped with a warning, other parts still render
-- BSP-tree boolean fallback: when boolmesh panics, operations automatically retry using csgrs BSP booleans
+- Hypermesh boolean fallback: when exact mesh booleans decline, operations retry using csgrs fallback booleans
 - AI model selection restored correctly after app restart (was being cleared during model list fetch)
 - User input and image attachments preserved on AI stream errors (no longer lost on retry)
 
 ### Changed
 
 - Chat messages use `is_error` flag for reliable error styling (no string matching)
-- Boolean operations refactored into `bool_op_with_fallback` for unified boolmesh → BSP fallback logic
+- Boolean operations refactored into `bool_op_with_fallback` for unified hypermesh → csgrs fallback logic
 - `Shape::Failed` variant prevents corrupted geometry from propagating through subsequent operations
 
 

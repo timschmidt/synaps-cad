@@ -18,18 +18,18 @@ pub fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
             continue;
         }
         // Fan triangulation from vertex 0
-            let p0 = &poly.vertices[0].position;
-            for j in 1..n - 1 {
-                let p1 = &poly.vertices[j].position;
-                let p2 = &poly.vertices[j + 1].position;
-                let idx = positions.len() as u32;
-                // OpenSCAD Z-up → Bevy Y-up: swap Y and Z
-                for p in [p0, p2, p1] {
-                    let x = p.x.to_f64_lossy().unwrap_or(0.0) as f32;
-                    let y = p.y.to_f64_lossy().unwrap_or(0.0) as f32;
-                    let z = p.z.to_f64_lossy().unwrap_or(0.0) as f32;
-                    positions.push([x, z, -y]);
-                }
+        let p0 = &poly.vertices[0].position;
+        for j in 1..n - 1 {
+            let p1 = &poly.vertices[j].position;
+            let p2 = &poly.vertices[j + 1].position;
+            let idx = positions.len() as u32;
+            // OpenSCAD Z-up → Bevy Y-up: swap Y and Z
+            for p in [p0, p2, p1] {
+                let x = p.x.to_f64_lossy().unwrap_or(0.0) as f32;
+                let y = p.y.to_f64_lossy().unwrap_or(0.0) as f32;
+                let z = p.z.to_f64_lossy().unwrap_or(0.0) as f32;
+                positions.push([x, z, -y]);
+            }
             let a = positions[idx as usize];
             let b = positions[idx as usize + 1];
             let c = positions[idx as usize + 2];
@@ -93,15 +93,15 @@ pub fn axis_angle_to_euler(angle_deg: f64, ax: f64, ay: f64, az: f64) -> (f64, f
     let pitch = if r20.abs() < 1.0 - 1e-12 {
         (-r20).asin()
     } else {
-        if r20 < 0.0 { std::f64::consts::FRAC_PI_2 } else { -std::f64::consts::FRAC_PI_2 }
+        if r20 < 0.0 {
+            std::f64::consts::FRAC_PI_2
+        } else {
+            -std::f64::consts::FRAC_PI_2
+        }
     };
     let is_not_singular = pitch.cos().abs() > 1e-12_f64;
     let yaw = if is_not_singular { r21.atan2(r22) } else { 0.0 };
     let roll = if is_not_singular { r10.atan2(r00) } else { 0.0 };
 
-    (
-        yaw.to_degrees(),
-        pitch.to_degrees(),
-        roll.to_degrees(),
-    )
+    (yaw.to_degrees(), pitch.to_degrees(), roll.to_degrees())
 }

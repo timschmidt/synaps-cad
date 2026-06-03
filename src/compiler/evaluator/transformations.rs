@@ -1,7 +1,7 @@
+use csgrs::Profile;
+use csgrs::Real;
 use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
-use csgrs::Real;
-use csgrs::Profile;
 use openscad_rs::ast::Statement;
 
 use super::{Evaluator, Value};
@@ -233,11 +233,7 @@ impl Evaluator {
 
             let layer = sketch
                 .extrude(to_real(layer_h))
-                .scale(
-                    to_real(avg_scale),
-                    to_real(avg_scale),
-                    Real::one(),
-                )
+                .scale(to_real(avg_scale), to_real(avg_scale), Real::one())
                 .rotate(Real::zero(), Real::zero(), to_real(avg_angle))
                 .translate(Real::zero(), Real::zero(), to_real(z0));
 

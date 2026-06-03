@@ -13,7 +13,7 @@ SynapsCAD is a single-binary Rust app built on **Bevy 0.15** (ECS game engine) w
 ```
 SynapsCAD code (editor)
     ↓  trigger_compilation_system
-Compiler thread on native / main thread on WASM (scad-rs parser → AST evaluator → csgrs CSG → boolmesh)
+Compiler thread on native / main thread on WASM (scad-rs parser → AST evaluator → csgrs CSG → hypermesh)
     ↓  mpsc channel
 poll_compilation_system
     ↓  spawns Bevy entities
@@ -148,7 +148,7 @@ if ($view == "assembly") view_assembly();
 
 - **Evaluator warnings** are collected in `Evaluator.warnings` (e.g. unsupported modules, recursion limits, extrude issues) and shown to the user after compilation. **Do not simply add warnings to ignore problems; prioritize removing the actual root cause of the warning whenever possible.**
 - **Mesh errors** (non-manifold, empty vertices) propagate as `Result::Err` and are shown per-part. Partial models still render — only the failing part is skipped.
-- **Panic recovery** via `catch_unwind` catches crashes in dependencies (boolmesh, csgrs) and surfaces them as user-visible errors.
+- **Panic recovery** via `catch_unwind` catches crashes in dependencies (hypermesh, csgrs) and surfaces them as user-visible errors.
 - **Bug-report hints**: Internal errors (panics, non-manifold mesh) include a message asking the user to report the bug with their code snippet.
 
 When adding new features, use `self.warnings.push(...)` in the `Evaluator` for recoverable issues, and `return Err(...)` for fatal per-part failures.

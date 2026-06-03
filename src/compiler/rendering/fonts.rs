@@ -1,6 +1,6 @@
-use csgrs::csg::CSG;
 use csgrs::Profile;
 use csgrs::Real;
+use csgrs::csg::CSG;
 
 /// Bundled Liberation Sans Regular font data.
 const LIBERATION_SANS_REGULAR: &[u8] =
