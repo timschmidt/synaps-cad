@@ -23,6 +23,7 @@ pub enum TransformKind {
 }
 
 #[derive(Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum Shape {
     Mesh3D(CsgMesh<()>),
     Sketch2D(Profile<()>),
@@ -42,7 +43,7 @@ impl fmt::Debug for Shape {
 
 impl Shape {
     /// Create a 3D shape from a `CsgMesh` primitive.
-    pub fn from_csg_mesh(mesh: CsgMesh<()>) -> Self {
+    pub const fn from_csg_mesh(mesh: CsgMesh<()>) -> Self {
         Self::Mesh3D(mesh)
     }
 
@@ -158,7 +159,7 @@ impl Shape {
             Self::Mesh3D(m) => Self::Mesh3D(m.scale(sx, sy, sz)),
             Self::Sketch2D(s) => {
                 if (sz.clone() - one.clone()).abs() < epsilon {
-                    Self::Sketch2D(s.scale(sx, sy, one.clone()))
+                    Self::Sketch2D(s.scale(sx, sy, one))
                 } else {
                     Self::from_csg_mesh(s.extrude(Self::to_real(0.01)).scale(sx, sy, sz))
                 }

@@ -13,7 +13,14 @@ fn compile_with_timeout(code: &str, fn_override: u32) -> CompilationResult {
         std::thread::sleep(std::time::Duration::from_secs(60));
         cancel_clone.store(true, Ordering::Relaxed);
     });
-    compile_scad_code(code, fn_override, Some(cancel))
+    let code = code.to_string();
+    std::thread::Builder::new()
+        .name("synaps-cad-test-compile".into())
+        .stack_size(64 * 1024 * 1024)
+        .spawn(move || compile_scad_code(&code, fn_override, Some(cancel)))
+        .expect("failed to spawn compilation test thread")
+        .join()
+        .unwrap_or_else(|_| CompilationResult::Error("Compilation thread panicked".into()))
 }
 
 #[test]

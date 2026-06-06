@@ -67,6 +67,7 @@ pub fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 /// Convert axis-angle rotation to Euler angles.
+#[must_use]
 pub fn axis_angle_to_euler(angle_deg: f64, ax: f64, ay: f64, az: f64) -> (f64, f64, f64) {
     let len = ax.mul_add(ax, ay.mul_add(ay, az * az)).sqrt();
     if len < 1e-12 {
@@ -92,12 +93,10 @@ pub fn axis_angle_to_euler(angle_deg: f64, ax: f64, ay: f64, az: f64) -> (f64, f
     // Convert to intrinsic ZYX Euler angles.
     let pitch = if r20.abs() < 1.0 - 1e-12 {
         (-r20).asin()
+    } else if r20 < 0.0 {
+        std::f64::consts::FRAC_PI_2
     } else {
-        if r20 < 0.0 {
-            std::f64::consts::FRAC_PI_2
-        } else {
-            -std::f64::consts::FRAC_PI_2
-        }
+        -std::f64::consts::FRAC_PI_2
     };
     let is_not_singular = pitch.cos().abs() > 1e-12_f64;
     let yaw = if is_not_singular { r21.atan2(r22) } else { 0.0 };

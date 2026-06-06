@@ -3491,7 +3491,6 @@ dependencies = [
 name = "hypermesh"
 version = "0.3.0"
 dependencies = [
- "hyperlattice",
  "hyperlimit",
  "hyperreal",
  "hypertri",
