@@ -3489,11 +3489,11 @@ dependencies = [
 
 [[package]]
 name = "hypermesh"
-version = "0.3.0"
+version = "0.1.0"
 dependencies = [
+ "hyperlattice",
  "hyperlimit",
  "hyperreal",
- "hypertri",
 ]
 
 [[package]]
@@ -3509,7 +3509,7 @@ dependencies = [
 
 [[package]]
 name = "hyperreal"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "num",
 ]
