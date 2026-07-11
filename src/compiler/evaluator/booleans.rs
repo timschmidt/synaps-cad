@@ -100,8 +100,8 @@ impl Evaluator {
             let mesh = shape.into_csg_mesh();
             all_polygons.extend(mesh.polygons);
         }
-        let combined = CsgMesh::from_polygons(&all_polygons, ());
-        Some(Shape::from_csg_mesh(combined.convex_hull()))
+        let combined = CsgMesh::from_polygons(&all_polygons);
+        Some(Shape::from_csg_mesh(combined.convex_hull(())))
     }
 
     pub fn eval_color_into(

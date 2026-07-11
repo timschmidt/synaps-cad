@@ -56,7 +56,9 @@ pub fn compile_scad_code(
             }
             geometry::Shape::Sketch2D(sketch) => {
                 // 2D shapes that weren't extruded are rendered as thin 3D meshes
-                match geometry::conversions::csg_mesh_to_mesh_data(&sketch.extrude(to_real(0.01))) {
+                match geometry::conversions::csg_mesh_to_mesh_data(
+                    &sketch.extrude(to_real(0.01), ()),
+                ) {
                     Ok(m) => m,
                     Err(_) => continue,
                 }

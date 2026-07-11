@@ -568,7 +568,7 @@ impl Evaluator {
                     let mut iter = child_shapes.into_iter();
                     let base = iter.next().unwrap().into_csg_mesh();
                     let tool = iter.next().unwrap().into_csg_mesh();
-                    Some(Shape::from_csg_mesh(base.minkowski_sum(&tool)))
+                    Some(Shape::from_csg_mesh(base.minkowski_sum(&tool, ())))
                 } else {
                     self.eval_passthrough_children(children)
                 }

@@ -208,7 +208,7 @@ impl Evaluator {
         if polygons.is_empty() {
             return None;
         }
-        Some(Shape::from_csg_mesh(CsgMesh::from_polygons(&polygons, ())))
+        Some(Shape::from_csg_mesh(CsgMesh::from_polygons(&polygons)))
     }
 
     // =======================================================================
@@ -222,7 +222,7 @@ impl Evaluator {
             .unwrap_or(1.0);
 
         let slices = self.resolve_fn_with_radius(args, Some(r));
-        Some(Shape::Sketch2D(Profile::circle(to_real(r), slices, ())))
+        Some(Shape::Sketch2D(Profile::circle(to_real(r), slices)))
     }
 
     #[allow(clippy::unused_self)]
@@ -231,12 +231,12 @@ impl Evaluator {
         let center = Self::get_arg_bool(args, "center", 1, false);
 
         let sketch = match size_val {
-            Value::Number(s) => Profile::square(to_real(*s), ()),
+            Value::Number(s) => Profile::square(to_real(*s)),
             Value::List(dims) => {
                 let nums: Vec<f64> = dims.iter().filter_map(Value::as_number).collect();
                 let w = nums.first().copied().unwrap_or(1.0);
                 let h = nums.get(1).copied().unwrap_or(w);
-                Profile::rectangle(to_real(w), to_real(h), ())
+                Profile::rectangle(to_real(w), to_real(h))
             }
             _ => return None,
         };
@@ -269,7 +269,7 @@ impl Evaluator {
             .iter()
             .map(|p| [to_real(p[0]), to_real(p[1])])
             .collect::<Vec<_>>();
-        Some(Shape::Sketch2D(Profile::polygon(&points, ())))
+        Some(Shape::Sketch2D(Profile::polygon(&points)))
     }
 
     #[must_use]

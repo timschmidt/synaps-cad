@@ -146,7 +146,7 @@ impl Evaluator {
             // Twisted/scaled extrusion: approximate by layered slices
             self.twisted_extrude(&sketch, height, twist, scale_val, slices)
         } else {
-            sketch.extrude(to_real(height))
+            sketch.extrude(to_real(height), ())
         };
 
         let mesh = if center { mesh.center() } else { mesh };
@@ -167,7 +167,7 @@ impl Evaluator {
         }
 
         let sketch = self.shapes_to_sketch(&child_shapes)?;
-        let mesh = match sketch.revolve(to_real(angle), slices) {
+        let mesh = match sketch.revolve(to_real(angle), slices, ()) {
             Ok(m) => m,
             Err(e) => {
                 self.warnings.push(format!("rotate_extrude() error: {e:?}"));
@@ -178,8 +178,8 @@ impl Evaluator {
     }
 
     /// Convert shapes to a single Sketch. 3D meshes are dropped with a warning.
-    pub fn shapes_to_sketch(&mut self, shapes: &[Shape]) -> Option<Profile<()>> {
-        let mut result: Option<Profile<()>> = None;
+    pub fn shapes_to_sketch(&mut self, shapes: &[Shape]) -> Option<Profile> {
+        let mut result: Option<Profile> = None;
         for shape in shapes {
             match shape {
                 Shape::Sketch2D(s) => {
@@ -202,7 +202,7 @@ impl Evaluator {
     #[allow(clippy::unused_self, clippy::cast_precision_loss)]
     pub fn twisted_extrude(
         &self,
-        sketch: &Profile<()>,
+        sketch: &Profile,
         height: f64,
         twist: f64,
         end_scale: f64,
@@ -232,7 +232,7 @@ impl Evaluator {
             let avg_angle = f64::midpoint(angle0, angle1);
 
             let layer = sketch
-                .extrude(to_real(layer_h))
+                .extrude(to_real(layer_h), ())
                 .scale(to_real(avg_scale), to_real(avg_scale), Real::one())
                 .rotate(Real::zero(), Real::zero(), to_real(avg_angle))
                 .translate(Real::zero(), Real::zero(), to_real(z0));

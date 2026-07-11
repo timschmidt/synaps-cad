@@ -26,7 +26,7 @@ pub enum TransformKind {
 #[allow(clippy::large_enum_variant)]
 pub enum Shape {
     Mesh3D(CsgMesh<()>),
-    Sketch2D(Profile<()>),
+    Sketch2D(Profile),
     /// Boolean/transform operations failed with this error.
     Failed(String),
 }
@@ -51,7 +51,7 @@ impl Shape {
     pub fn into_csg_mesh(self) -> CsgMesh<()> {
         match self {
             Self::Mesh3D(m) => m,
-            Self::Sketch2D(s) => s.extrude(Self::to_real(0.01)),
+            Self::Sketch2D(s) => s.extrude(Self::to_real(0.01), ()),
             Self::Failed(_) => CsgMesh::new(),
         }
     }
@@ -125,7 +125,7 @@ impl Shape {
                 if z.abs() < epsilon {
                     Self::Sketch2D(s.translate(x, y, zero))
                 } else {
-                    Self::from_csg_mesh(s.extrude(Self::to_real(0.01)).translate(x, y, z))
+                    Self::from_csg_mesh(s.extrude(Self::to_real(0.01), ()).translate(x, y, z))
                 }
             }
             Self::Failed(e) => Self::Failed(e),
@@ -143,7 +143,7 @@ impl Shape {
                 if x.abs() < epsilon && y.abs() < epsilon {
                     Self::Sketch2D(s.rotate(zero.clone(), zero, z))
                 } else {
-                    Self::from_csg_mesh(s.extrude(Self::to_real(0.01)).rotate(x, y, z))
+                    Self::from_csg_mesh(s.extrude(Self::to_real(0.01), ()).rotate(x, y, z))
                 }
             }
             Self::Failed(e) => Self::Failed(e),
@@ -161,7 +161,7 @@ impl Shape {
                 if (sz.clone() - one.clone()).abs() < epsilon {
                     Self::Sketch2D(s.scale(sx, sy, one))
                 } else {
-                    Self::from_csg_mesh(s.extrude(Self::to_real(0.01)).scale(sx, sy, sz))
+                    Self::from_csg_mesh(s.extrude(Self::to_real(0.01), ()).scale(sx, sy, sz))
                 }
             }
             Self::Failed(e) => Self::Failed(e),

@@ -128,7 +128,7 @@ fn to_real(value: f64) -> Real {
     Real::try_from(value).ok().unwrap_or_else(Real::zero)
 }
 
-pub fn apply_text_alignment(sketch: Profile<()>, halign: &str, valign: &str) -> Profile<()> {
+pub fn apply_text_alignment(sketch: Profile, halign: &str, valign: &str) -> Profile {
     // Compute bounding box by triangulating and scanning vertices
     let tris = sketch.triangulate();
     if tris.is_empty() {
@@ -183,7 +183,7 @@ pub fn render_text_with_direction(
     size: f64,
     spacing: f64,
     direction: &str,
-) -> Profile<()> {
+) -> Profile {
     // Normalize direction: OpenSCAD accepts "ltr", "rtl", "ttb", "btt"
     // OpenSCAD uses HarfBuzz which matches direction by first character:
     // 'r' → RTL, 't' → TTB, 'b' → BTT, anything else → LTR
@@ -238,7 +238,7 @@ pub fn render_text_with_direction(
         text.chars().collect()
     };
 
-    let mut combined: Option<Profile<()>> = None;
+    let mut combined: Option<Profile> = None;
     let mut cursor = 0.0_f64;
 
     for ch in &chars {
@@ -273,7 +273,7 @@ pub fn render_text_with_direction(
             .is_some();
 
         if has_outline {
-            let glyph = Profile::text(&ch.to_string(), font_data, to_real(corrected_size), ());
+            let glyph = Profile::text(&ch.to_string(), font_data, to_real(corrected_size));
             let positioned = if is_vertical {
                 // TTB/BTT: top-to-bottom layout. Text extends downward from y≈0.
                 // Shift baseline down by ascender so the ascent line is at y=0.
