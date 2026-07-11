@@ -14,6 +14,10 @@
   Vibe Code your 3D models!
 </p>
 
+<p align="center">
+  <a href="https://timschmidt.github.io/synaps-cad"><strong>Launch SynapsCAD in your browser</strong></a>
+</p>
+
 <br>
 
 > ⚠️ **Early Prototype** — Not all OpenSCAD code will compile correctly yet. Start with simple models and expect rough edges. Bug reports with code snippets that cause issues are very welcome!
@@ -67,7 +71,7 @@ SynapsCAD can also be built for the browser and packaged for static hosting:
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.112 --locked
+cargo install wasm-bindgen-cli --version 0.2.122 --locked
 cargo build --release --target wasm32-unknown-unknown
 mkdir -p dist/pkg
 wasm-bindgen --target web --out-dir dist/pkg --out-name synaps_cad target/wasm32-unknown-unknown/release/synaps-cad.wasm

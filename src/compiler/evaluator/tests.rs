@@ -989,6 +989,40 @@ fn test_cone_zero_r1() {
     }
 }
 
+fn signed_volume(mesh: &MeshData) -> f64 {
+    mesh.indices
+        .chunks_exact(3)
+        .map(|triangle| {
+            let a = mesh.positions[triangle[0] as usize].map(f64::from);
+            let b = mesh.positions[triangle[1] as usize].map(f64::from);
+            let c = mesh.positions[triangle[2] as usize].map(f64::from);
+            let cross = [
+                b[1].mul_add(c[2], -(b[2] * c[1])),
+                b[2].mul_add(c[0], -(b[0] * c[2])),
+                b[0].mul_add(c[1], -(b[1] * c[0])),
+            ];
+            a[0].mul_add(cross[0], a[1].mul_add(cross[1], a[2] * cross[2])) / 6.0
+        })
+        .sum()
+}
+
+#[test]
+fn curved_primitives_export_with_outward_winding() {
+    for code in [
+        "sphere(r=5, $fn=16);",
+        "cylinder(h=8, r=5, $fn=16);",
+        "cylinder(h=8, r1=0, r2=5, $fn=16);",
+        "cylinder(h=8, r1=5, r2=0, $fn=16);",
+    ] {
+        let mesh = compile_to_merged_mesh(code);
+        let volume = signed_volume(&mesh);
+        assert!(
+            volume > 0.0,
+            "{code} exported inward or malformed triangles (signed volume {volume})"
+        );
+    }
+}
+
 #[test]
 fn test_color_named_and_rgb() {
     let code = r#"
