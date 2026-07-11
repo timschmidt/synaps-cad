@@ -36,7 +36,18 @@ jobs:
           key: wasm32-unknown-unknown
 
       - name: Install wasm-bindgen CLI
-        run: cargo install wasm-bindgen-cli --version 0.2.112 --locked
+        shell: bash
+        run: |
+          WASM_BINDGEN_VERSION="$(awk '
+            $0 == "name = \"wasm-bindgen\"" { found = 1; next }
+            found && $1 == "version" {
+              gsub(/"/, "", $3)
+              print $3
+              exit
+            }
+          ' Cargo.lock)"
+          test -n "${WASM_BINDGEN_VERSION}"
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
 
       - name: Build WASM
         run: cargo build --locked --release --target wasm32-unknown-unknown
