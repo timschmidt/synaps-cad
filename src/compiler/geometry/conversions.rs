@@ -17,47 +17,27 @@ pub fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
             continue;
         }
         for index in 1..poly.vertices.len() - 1 {
-            let triangle = [
-                &poly.vertices[0],
-                &poly.vertices[index],
-                &poly.vertices[index + 1],
-            ];
             let idx = positions.len() as u32;
-            let mut triangle_positions = triangle.map(|vertex| {
-                let p = &vertex.position;
+            let triangle_positions = [
+                &poly.vertices[0].position,
+                &poly.vertices[index].position,
+                &poly.vertices[index + 1].position,
+            ]
+            .map(|p| {
                 let x = p.x.to_f64_lossy().unwrap_or(0.0) as f32;
                 let y = p.y.to_f64_lossy().unwrap_or(0.0) as f32;
                 let z = p.z.to_f64_lossy().unwrap_or(0.0) as f32;
                 // OpenSCAD Z-up -> Bevy Y-up (a proper rotation).
                 [x, z, -y]
             });
-            let intended_normal = triangle.iter().fold([0.0; 3], |mut sum, vertex| {
-                let normal = &vertex.normal;
-                sum[0] += normal.0[0].to_f64_lossy().unwrap_or(0.0) as f32;
-                sum[1] += normal.0[2].to_f64_lossy().unwrap_or(0.0) as f32;
-                sum[2] -= normal.0[1].to_f64_lossy().unwrap_or(0.0) as f32;
-                sum
-            });
-
-            let mut a = triangle_positions[0];
-            let mut b = triangle_positions[1];
-            let mut c = triangle_positions[2];
+            let [a, b, c] = triangle_positions;
             let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
             let ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
-            let mut cross = [
+            let cross = [
                 ab[1].mul_add(ac[2], -(ab[2] * ac[1])),
                 ab[2].mul_add(ac[0], -(ab[0] * ac[2])),
                 ab[0].mul_add(ac[1], -(ab[1] * ac[0])),
             ];
-            let alignment = cross[0].mul_add(
-                intended_normal[0],
-                cross[1].mul_add(intended_normal[1], cross[2] * intended_normal[2]),
-            );
-            if alignment < 0.0 {
-                triangle_positions.swap(1, 2);
-                [a, b, c] = triangle_positions;
-                cross = [-cross[0], -cross[1], -cross[2]];
-            }
             let len = cross[0]
                 .mul_add(cross[0], cross[1].mul_add(cross[1], cross[2] * cross[2]))
                 .sqrt();
