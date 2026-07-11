@@ -1,0 +1,33 @@
+name: Checkout Hyper workspace
+description: Fetch the exact sibling repositories required by local path dependencies
+
+runs:
+  using: composite
+  steps:
+    - name: Fetch pinned Hyper repositories
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        checkout_repo() {
+          local name="$1"
+          local url="$2"
+          local revision="$3"
+          local destination="${GITHUB_WORKSPACE}/../${name}"
+
+          git init "${destination}"
+          git -C "${destination}" remote add origin "${url}"
+          git -C "${destination}" fetch --depth 1 origin "${revision}"
+          git -C "${destination}" checkout --detach FETCH_HEAD
+        }
+
+        checkout_repo csgrs https://github.com/timschmidt/csgrs.git b3ea3295b2f15c4296822d0c9e03f331785e005c
+        checkout_repo hypercurve https://github.com/timschmidt/hypercurve.git d9c004fc236765e85e0df6ff05a9af5e8489634c
+        checkout_repo hyperlattice https://github.com/timschmidt/hyperlattice.git 6c966a0f2186872527d2cd322de14bc06e71646d
+        checkout_repo hyperlimit https://github.com/timschmidt/liminal.git dc89d62afd3de2324a2e677c9a88c1a616945aad
+        checkout_repo hypermesh https://github.com/timschmidt/hypermesh.git 6bc27f1ffd9a73aa6b45c483e65930340cf0a09f
+        checkout_repo hyperphysics https://github.com/timschmidt/hyperphysics.git 27f5ddcb7b9be88b4d616426297801a8cb66b550
+        checkout_repo hyperreal https://github.com/timschmidt/hyperreal.git 78d7bf555a081fc1d7f2557b0603cfae10bc3765
+        checkout_repo hypersdf https://github.com/timschmidt/hypersdf.git 0881afe0ac5d7f60c92f01daef6b8ba167a7a4f0
+        checkout_repo hypersolve https://github.com/timschmidt/hypersolve.git 22fb082060395d54a1e853d757470f9ab03ae775
+        checkout_repo hypertri https://github.com/timschmidt/hypertriangulate.git a0f9e86e82a7264de8c6005e9632ce3a57d39771

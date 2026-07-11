@@ -16,6 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: ./.github/actions/hyper-workspace
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
@@ -32,13 +34,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Run tests
-        run: cargo test
+        run: cargo test --locked
 
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/hyper-workspace
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -58,4 +62,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Run clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --locked -- -D warnings
