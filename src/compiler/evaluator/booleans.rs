@@ -70,7 +70,15 @@ impl Evaluator {
 
         if let Some(r_val) = r {
             if r_val.abs() > 1e-12 {
-                Some(Shape::Sketch2D(sketch.offset_rounded(Self::to_real(r_val))))
+                let distance = Self::to_real(r_val);
+                let offset = sketch.offset_rounded(distance.clone());
+                Some(Shape::Sketch2D(
+                    if offset.is_empty() && !sketch.is_empty() {
+                        sketch.offset_rounded_finite_output(distance)
+                    } else {
+                        offset
+                    },
+                ))
             } else {
                 Some(Shape::Sketch2D(sketch))
             }
@@ -83,7 +91,15 @@ impl Evaluator {
         } else {
             let d = Self::get_arg_number(args, "", 0).unwrap_or(0.0);
             if d.abs() > 1e-12 {
-                Some(Shape::Sketch2D(sketch.offset(Self::to_real(d))))
+                let distance = Self::to_real(d);
+                let offset = sketch.offset_rounded(distance.clone());
+                Some(Shape::Sketch2D(
+                    if offset.is_empty() && !sketch.is_empty() {
+                        sketch.offset_rounded_finite_output(distance)
+                    } else {
+                        offset
+                    },
+                ))
             } else {
                 Some(Shape::Sketch2D(sketch))
             }
@@ -101,7 +117,12 @@ impl Evaluator {
             all_polygons.extend(mesh.polygons);
         }
         let combined = CsgMesh::from_polygons(&all_polygons);
-        Some(Shape::from_csg_mesh(combined.convex_hull(())))
+        let exact_hull = combined.convex_hull(());
+        if !exact_hull.polygons.is_empty() {
+            return Some(Shape::from_csg_mesh(exact_hull));
+        }
+
+        Some(Shape::from_csg_mesh(combined.convex_hull_finite_output(())))
     }
 
     pub fn eval_color_into(

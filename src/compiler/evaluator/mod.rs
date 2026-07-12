@@ -36,6 +36,7 @@ pub struct Evaluator {
     pub functions: HashMap<String, UserFunction>,
     /// Stack of call-site children for `children()` calls inside user modules.
     pub children_stack: Vec<Vec<Statement>>,
+    children_cache_stack: Vec<Vec<Option<Vec<Shape>>>>,
     /// Recursion depth counter to prevent stack overflow.
     pub depth: usize,
     /// Stack of active colors from nested `color()` calls.
@@ -66,6 +67,7 @@ impl Evaluator {
             modules: HashMap::new(),
             functions: HashMap::new(),
             children_stack: Vec::new(),
+            children_cache_stack: Vec::new(),
             depth: 0,
             color_stack: Vec::new(),
             warnings: Vec::new(),
@@ -220,6 +222,15 @@ impl Evaluator {
                     "color" => {
                         let eval_args = self.eval_arguments(args);
                         self.eval_color_into(children, &eval_args, shapes);
+                    }
+                    "children" => {
+                        let eval_args = self.eval_arguments(args);
+                        let color = self.color_stack.last().copied();
+                        shapes.extend(
+                            self.eval_children_instantiation(&eval_args)
+                                .into_iter()
+                                .map(|shape| (shape, color)),
+                        );
                     }
                     "translate" | "rotate" | "scale" | "mirror" => {
                         let eval_args = self.eval_arguments(args);
@@ -414,6 +425,12 @@ impl Evaluator {
 
         let saved_vars = self.variables.clone();
         self.children_stack.push(call_site_children.to_vec());
+        self.children_cache_stack
+            .push(vec![None; call_site_children.len()]);
+        self.variables.insert(
+            "$children".into(),
+            Value::Number(call_site_children.len() as f64),
+        );
 
         // Bind parameters
         let mut pos_idx = 0;
@@ -440,6 +457,7 @@ impl Evaluator {
         }
 
         self.variables = saved_vars;
+        self.children_cache_stack.pop();
         self.children_stack.pop();
         self.depth -= 1;
     }
@@ -453,6 +471,12 @@ impl Evaluator {
     ) -> Option<Shape> {
         let saved_vars = self.variables.clone();
         self.children_stack.push(call_site_children.to_vec());
+        self.children_cache_stack
+            .push(vec![None; call_site_children.len()]);
+        self.variables.insert(
+            "$children".into(),
+            Value::Number(call_site_children.len() as f64),
+        );
 
         let mut pos_idx = 0;
         for (param_name, default_expr) in &user_mod.params {
@@ -480,6 +504,7 @@ impl Evaluator {
         }
 
         self.variables = saved_vars;
+        self.children_cache_stack.pop();
         self.children_stack.pop();
 
         if meshes.is_empty() {
@@ -578,23 +603,13 @@ impl Evaluator {
                 self.eval_passthrough_children(children)
             }
             "children" => {
-                // Evaluate call-site children from the parent user module
-                self.children_stack
-                    .last()
-                    .cloned()
-                    .and_then(|call_site_children| {
-                        let shapes = self.eval_children(&call_site_children);
-                        if shapes.is_empty() {
-                            None
-                        } else {
-                            let mut iter = shapes.into_iter();
-                            let mut result = iter.next().unwrap();
-                            for s in iter {
-                                result = result.union(s);
-                            }
-                            Some(result)
-                        }
-                    })
+                let shapes = self.eval_children_instantiation(&args);
+                let mut iter = shapes.into_iter();
+                let mut result = iter.next()?;
+                for shape in iter {
+                    result = result.union(shape);
+                }
+                Some(result)
             }
 
             _ => {
@@ -680,6 +695,52 @@ impl Evaluator {
             }
         }
         result
+    }
+
+    fn eval_cached_call_site_child(&mut self, index: usize) -> Vec<Shape> {
+        if let Some(cached) = self
+            .children_cache_stack
+            .last()
+            .and_then(|cache| cache.get(index))
+            .and_then(Option::as_ref)
+        {
+            return cached.clone();
+        }
+        let Some(child) = self
+            .children_stack
+            .last()
+            .and_then(|children| children.get(index))
+            .cloned()
+        else {
+            return Vec::new();
+        };
+        let mut evaluated = Vec::new();
+        self.eval_statement(&child, &mut evaluated);
+        let shapes: Vec<Shape> = evaluated.into_iter().map(|(shape, _)| shape).collect();
+        if let Some(slot) = self
+            .children_cache_stack
+            .last_mut()
+            .and_then(|cache| cache.get_mut(index))
+        {
+            *slot = Some(shapes.clone());
+        }
+        shapes
+    }
+
+    fn eval_children_instantiation(&mut self, args: &[(Option<String>, Value)]) -> Vec<Shape> {
+        let indices = if let Some(index) = Self::get_arg_number(args, "index", 0) {
+            if !index.is_finite() || index < 0.0 || index.fract() != 0.0 {
+                Vec::new()
+            } else {
+                vec![index as usize]
+            }
+        } else {
+            (0..self.children_stack.last().map_or(0, Vec::len)).collect()
+        };
+        indices
+            .into_iter()
+            .flat_map(|index| self.eval_cached_call_site_child(index))
+            .collect()
     }
 
     #[allow(clippy::missing_panics_doc)]

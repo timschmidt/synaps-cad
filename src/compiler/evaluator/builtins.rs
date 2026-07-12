@@ -156,8 +156,22 @@ impl Evaluator {
                 self.eval_echo(&echo_args);
                 body.as_ref().map_or(Value::Undef, |b| self.eval_expr(b))
             }
-            ExprKind::Assert { body, .. } => {
-                body.as_ref().map_or(Value::Undef, |b| self.eval_expr(b))
+            ExprKind::Assert { args, body } => {
+                let values = args
+                    .iter()
+                    .map(|argument| (argument.name.clone(), self.eval_expr(&argument.value)))
+                    .collect::<Vec<_>>();
+                if values.first().is_some_and(|(_, value)| value.as_bool()) {
+                    body.as_ref()
+                        .map_or(Value::Undef, |body| self.eval_expr(body))
+                } else {
+                    let message = values
+                        .get(1)
+                        .map(|(_, value)| format_value(value))
+                        .unwrap_or_else(|| "assertion failed".into());
+                    self.warnings.push(format!("Assertion failed: {message}"));
+                    Value::Undef
+                }
             }
             _ => Value::Undef,
         }
@@ -588,5 +602,16 @@ impl Evaluator {
                 Value::Undef
             }
         }
+    }
+}
+
+fn format_value(value: &Value) -> String {
+    match value {
+        Value::Number(number) => number.to_string(),
+        Value::Bool(value) => value.to_string(),
+        Value::List(values) => format!("{values:?}"),
+        Value::String(value) => value.clone(),
+        Value::Range(from, to, step) => format!("[{from}:{step}:{to}]"),
+        Value::Undef => "undef".into(),
     }
 }

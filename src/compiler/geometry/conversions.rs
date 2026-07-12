@@ -13,7 +13,7 @@ pub fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
     let mut indices = Vec::new();
 
     for poly in &mesh.polygons {
-        for triangle in poly.triangulate() {
+        for triangle in poly.triangulate_finite_output() {
             let idx = positions.len() as u32;
             let triangle_positions = triangle.each_ref().map(|vertex| {
                 let p = &vertex.position;

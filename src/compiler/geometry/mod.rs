@@ -70,11 +70,7 @@ impl Shape {
         }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.union(&b)),
-            (a, b) => Self::from_csg_mesh(csg_bool(
-                a.into_csg_mesh(),
-                b.into_csg_mesh(),
-                BoolOp::Union,
-            )),
+            (a, b) => csg_bool(a.into_csg_mesh(), b.into_csg_mesh(), BoolOp::Union),
         }
     }
 
@@ -88,11 +84,7 @@ impl Shape {
         }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.difference(&b)),
-            (a, b) => Self::from_csg_mesh(csg_bool(
-                a.into_csg_mesh(),
-                b.into_csg_mesh(),
-                BoolOp::Difference,
-            )),
+            (a, b) => csg_bool(a.into_csg_mesh(), b.into_csg_mesh(), BoolOp::Difference),
         }
     }
 
@@ -106,11 +98,7 @@ impl Shape {
         }
         match (self, other) {
             (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.intersection(&b)),
-            (a, b) => Self::from_csg_mesh(csg_bool(
-                a.into_csg_mesh(),
-                b.into_csg_mesh(),
-                BoolOp::Intersection,
-            )),
+            (a, b) => csg_bool(a.into_csg_mesh(), b.into_csg_mesh(), BoolOp::Intersection),
         }
     }
 
@@ -196,11 +184,35 @@ impl Shape {
     }
 }
 
-fn csg_bool(lhs: CsgMesh<()>, rhs: CsgMesh<()>, op: BoolOp) -> CsgMesh<()> {
+fn try_csg_bool(
+    lhs: &CsgMesh<()>,
+    rhs: &CsgMesh<()>,
+    op: BoolOp,
+) -> Result<CsgMesh<()>, csgrs::mesh::hypermesh::HypermeshError> {
     match op {
-        BoolOp::Union => lhs.union(&rhs),
-        BoolOp::Difference => lhs.difference(&rhs),
-        BoolOp::Intersection => lhs.intersection(&rhs),
+        BoolOp::Union => lhs.try_union(rhs),
+        BoolOp::Difference => lhs.try_difference(rhs),
+        BoolOp::Intersection => lhs.try_intersection(rhs),
+    }
+}
+
+fn csg_bool(lhs: CsgMesh<()>, rhs: CsgMesh<()>, op: BoolOp) -> Shape {
+    match try_csg_bool(&lhs, &rhs, op) {
+        Ok(mesh) => Shape::Mesh3D(mesh),
+        Err(exact_error) => {
+            let Some(lhs) = lhs.materialize_finite_output() else {
+                return Shape::Failed(format!("exact {op:?} failed: {exact_error}"));
+            };
+            let Some(rhs) = rhs.materialize_finite_output() else {
+                return Shape::Failed(format!("exact {op:?} failed: {exact_error}"));
+            };
+            match try_csg_bool(&lhs, &rhs, op) {
+                Ok(mesh) => Shape::Mesh3D(mesh),
+                Err(finite_error) => Shape::Failed(format!(
+                    "exact {op:?} failed: {exact_error}; finite output retry failed: {finite_error}"
+                )),
+            }
+        }
     }
 }
 
