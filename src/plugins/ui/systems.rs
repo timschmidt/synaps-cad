@@ -316,7 +316,7 @@ pub fn performance_monitor_system(
                     for window in points.windows(2) {
                         painter.line_segment(
                             [window[0], window[1]],
-                            egui::Stroke::new(1.0, egui::Color32::GREEN),
+                            egui::Stroke::new(1.0_f32, egui::Color32::GREEN),
                         );
                     }
 
@@ -329,7 +329,7 @@ pub fn performance_monitor_system(
                                 egui::pos2(response.rect.min.x, target_y),
                                 egui::pos2(response.rect.max.x, target_y),
                             ],
-                            egui::Stroke::new(1.0, egui::Color32::RED),
+                            egui::Stroke::new(1.0_f32, egui::Color32::RED),
                         );
                     }
                 }

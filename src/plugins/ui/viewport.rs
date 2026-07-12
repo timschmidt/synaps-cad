@@ -35,7 +35,10 @@ pub fn viewport_toolbar_system(
                 .fill(egui::Color32::from_rgba_premultiplied(30, 30, 46, 220))
                 .corner_radius(egui::CornerRadius::same(6))
                 .inner_margin(egui::Margin::symmetric(6, 4))
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 55, 75)))
+                .stroke(egui::Stroke::new(
+                    1.0_f32,
+                    egui::Color32::from_rgb(55, 55, 75),
+                ))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing = egui::vec2(4.0, 0.0);
@@ -335,7 +338,7 @@ pub fn draw_axis_indicator(
             let center = ui.min_rect().min;
             for (view_dir, color, label) in sorted_axes {
                 let end = center + egui::vec2(view_dir.x, -view_dir.y) * axis_len;
-                painter.line_segment([center, end], egui::Stroke::new(2.5, color));
+                painter.line_segment([center, end], egui::Stroke::new(2.5_f32, color));
                 painter.text(
                     end + egui::vec2(view_dir.x, -view_dir.y) * 8.0,
                     egui::Align2::CENTER_CENTER,

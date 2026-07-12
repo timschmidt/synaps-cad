@@ -133,8 +133,8 @@ fn orbit_camera_system(
         } else {
             // Orbit
             let sensitivity = 0.005;
-            orbit.yaw -= delta.x * sensitivity;
-            orbit.pitch -= delta.y * sensitivity;
+            orbit.yaw = delta.x.mul_add(-sensitivity, orbit.yaw);
+            orbit.pitch = delta.y.mul_add(-sensitivity, orbit.pitch);
             orbit.pitch = orbit.pitch.clamp(
                 -std::f32::consts::FRAC_PI_2 + 0.01,
                 std::f32::consts::FRAC_PI_2 - 0.01,
@@ -477,7 +477,7 @@ fn ruler_gizmo_system(
                 .corner_radius(egui::CornerRadius::same(4))
                 .inner_margin(egui::Margin::symmetric(6, 3))
                 .stroke(egui::Stroke::new(
-                    1.0,
+                    1.0_f32,
                     egui::Color32::from_rgb(255, 255, 100),
                 ))
                 .show(ui, |ui: &mut egui::Ui| {

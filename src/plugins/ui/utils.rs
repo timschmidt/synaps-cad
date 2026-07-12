@@ -205,7 +205,10 @@ pub fn show_texture_preview(ui: &egui::Ui, texture: &egui::TextureHandle) {
                     .fill(egui::Color32::from_rgb(30, 30, 46))
                     .corner_radius(egui::CornerRadius::same(6))
                     .inner_margin(egui::Margin::same(4))
-                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 100)))
+                    .stroke(egui::Stroke::new(
+                        1.0_f32,
+                        egui::Color32::from_rgb(80, 80, 100),
+                    ))
                     .show(ui, |ui| {
                         ui.image(egui::load::SizedTexture::new(
                             texture.id(),

@@ -28,33 +28,33 @@ pub fn setup_egui_theme(mut contexts: EguiContexts) {
     let small_rounding = egui::CornerRadius::same(4);
 
     visuals.widgets.noninteractive.bg_fill = widget_bg;
-    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, dim_text);
+    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0_f32, dim_text);
     visuals.widgets.noninteractive.corner_radius = small_rounding;
 
     visuals.widgets.inactive.bg_fill = widget_bg;
-    visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, text_color);
+    visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, text_color);
     visuals.widgets.inactive.corner_radius = rounding;
 
     visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(55, 55, 80);
-    visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
+    visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
     visuals.widgets.hovered.corner_radius = rounding;
 
     visuals.widgets.active.bg_fill = accent;
-    visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
+    visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
     visuals.widgets.active.corner_radius = rounding;
 
     visuals.widgets.open.bg_fill = egui::Color32::from_rgb(50, 50, 72);
-    visuals.widgets.open.fg_stroke = egui::Stroke::new(1.0, text_color);
+    visuals.widgets.open.fg_stroke = egui::Stroke::new(1.0_f32, text_color);
     visuals.widgets.open.corner_radius = rounding;
 
     visuals.selection.bg_fill = accent.linear_multiply(0.3);
-    visuals.selection.stroke = egui::Stroke::new(1.0, accent);
+    visuals.selection.stroke = egui::Stroke::new(1.0_f32, accent);
 
     visuals.window_corner_radius = egui::CornerRadius::same(8);
-    visuals.window_stroke = egui::Stroke::new(1.0, separator);
+    visuals.window_stroke = egui::Stroke::new(1.0_f32, separator);
 
     // Separator
-    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, separator);
+    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, separator);
 
     visuals.interact_cursor = Some(egui::CursorIcon::PointingHand);
 
