@@ -107,7 +107,7 @@ impl Shape {
         let zero = Self::to_real(0.0);
         let epsilon = Self::to_real(1e-12);
         match self {
-            Self::Mesh3D(m) => Self::Mesh3D(m.translate(x, y, z)),
+            Self::Mesh3D(m) => Self::Mesh3D(m.into_translated(x, y, z)),
             Self::Sketch2D(s) => {
                 if z.abs() < epsilon {
                     Self::Sketch2D(s.translate(x, y, zero))
@@ -124,7 +124,7 @@ impl Shape {
         let zero = Self::to_real(0.0);
         let epsilon = Self::to_real(1e-12);
         match self {
-            Self::Mesh3D(m) => Self::Mesh3D(m.rotate(x, y, z)),
+            Self::Mesh3D(m) => Self::Mesh3D(m.into_rotated(x, y, z)),
             Self::Sketch2D(s) => {
                 if x.abs() < epsilon && y.abs() < epsilon {
                     Self::Sketch2D(s.rotate(zero.clone(), zero, z))
