@@ -129,7 +129,7 @@ mod tests {
         assert_eq!(rendered.positions.len(), 9);
         for triangle in rendered.positions.chunks_exact(3) {
             let [a, b, c] = triangle else { unreachable!() };
-            let area = (b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0]);
+            let area = (b[2] - a[2]).mul_add(-(c[0] - a[0]), (b[0] - a[0]) * (c[2] - a[2]));
             assert!(area.abs() > f32::EPSILON);
         }
     }

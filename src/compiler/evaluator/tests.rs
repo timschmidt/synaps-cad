@@ -16,7 +16,7 @@ fn compile_with_timeout(code: &str, fn_override: u32) -> CompilationResult {
     let cancel = Arc::new(AtomicBool::new(false));
     let cancel_clone = cancel.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_secs(60));
+        std::thread::sleep(std::time::Duration::from_mins(1));
         cancel_clone.store(true, Ordering::Relaxed);
     });
     let code = code.to_string();
@@ -31,7 +31,7 @@ fn compile_with_timeout(code: &str, fn_override: u32) -> CompilationResult {
 
 #[test]
 fn test_star_difference() {
-    let code = r#"
+    let code = r"
 module star(points = 5, outer_r = 3, inner_r = 1.2, h = 2) {
     linear_extrude(height = h)
         polygon([for (i = [0:2*points-1])
@@ -46,7 +46,7 @@ difference() {
     translate([0, 0, -0.5])
         star(points = 5, outer_r = 5, inner_r = 2, h = 2);
 }
-"#;
+";
     let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
@@ -71,14 +71,14 @@ difference() {
 
 #[test]
 fn test_star_polygon_standalone() {
-    let code = r#"
+    let code = r"
 linear_extrude(height = 2)
     polygon([for (i = [0:9])
         let(r = (i % 2 == 0) ? 5 : 2,
             a = 90 + i * 36)
         [r * cos(a), r * sin(a)]
     ]);
-"#;
+";
     let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
@@ -91,7 +91,7 @@ linear_extrude(height = 2)
                 );
             }
             assert!(!parts.is_empty(), "Star polygon should produce geometry");
-            assert!(parts[0].indices.len() > 0, "Star should have triangles");
+            assert!(!parts[0].indices.is_empty(), "Star should have triangles");
         }
         CompilationResult::Error(e) => panic!("Compilation failed: {e}"),
         CompilationResult::Canceled => panic!("Compilation was unexpectedly canceled"),
@@ -313,10 +313,10 @@ fn failed_assert_expression_reports_its_message() {
 
 #[test]
 fn test_axis_angle_rotate() {
-    let code = r#"
+    let code = r"
 rotate(a = 45, v = [1, 0, 0])
     cube([10, 10, 10]);
-"#;
+";
     let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
@@ -359,7 +359,7 @@ fn compile_to_merged_mesh(code: &str) -> MeshData {
             let mut normals = Vec::new();
             let mut indices = Vec::new();
             for part in parts {
-                let offset = positions.len() as u32;
+                let offset = u32::try_from(positions.len()).expect("mesh exceeds u32 indexing");
                 positions.extend(part.positions);
                 normals.extend(part.normals);
                 indices.extend(part.indices.iter().map(|i| i + offset));
@@ -409,16 +409,48 @@ fn exact_240_degree_rotation_places_rocket_fin_in_the_third_sector() {
             .expect("finite center y");
         let radians = degrees.to_radians();
 
-        assert!((center_x - 10.0 * radians.cos()).abs() < 1.0e-9);
-        assert!((center_y - 10.0 * radians.sin()).abs() < 1.0e-9);
+        assert!(10.0f64.mul_add(-radians.cos(), center_x).abs() < 1.0e-9);
+        assert!(10.0f64.mul_add(-radians.sin(), center_y).abs() < 1.0e-9);
     }
+}
+
+#[test]
+fn exact_rational_arithmetic_reaches_mesh_coordinates_without_float_demotion() {
+    let mesh =
+        compile_to_csg_mesh(r#"cube([exact("1/3") + exact("1/6"), exact("2/5"), exact("3/7")]);"#);
+    let bounds = mesh.bounding_box();
+
+    assert_eq!(bounds.maxs.x, "1/2".parse::<csgrs::Real>().unwrap());
+    assert_eq!(bounds.maxs.y, "2/5".parse::<csgrs::Real>().unwrap());
+    assert_eq!(bounds.maxs.z, "3/7".parse::<csgrs::Real>().unwrap());
+}
+
+#[test]
+fn exact_symbolic_constants_and_trig_reach_transforms() {
+    let mesh = compile_to_csg_mesh(
+        r#"
+        translate([cos(exact("60")), sin(exact("30")), 0])
+            cube(exact("1/7"));
+        "#,
+    );
+    let bounds = mesh.bounding_box();
+    let half = "1/2".parse::<csgrs::Real>().unwrap();
+
+    assert_eq!(bounds.mins.x, half);
+    assert_eq!(bounds.mins.y, "1/2".parse::<csgrs::Real>().unwrap());
+
+    let mut evaluator = Evaluator::new();
+    assert!(matches!(
+        evaluator.eval_builtin_function("exact", &[Value::String("pi".into())]),
+        Value::Exact(value) if value == csgrs::Real::pi()
+    ));
 }
 
 #[test]
 fn test_scalar_vector_mul() {
     let m = compile_to_merged_mesh("r=25; translate(r * [1, 0, 0]) cube(5);");
-    let xs: Vec<f64> = m.positions.iter().map(|p| p[0] as f64).collect();
-    let min_x = xs.iter().cloned().fold(f64::INFINITY, f64::min);
+    let xs: Vec<f64> = m.positions.iter().map(|p| f64::from(p[0])).collect();
+    let min_x = xs.iter().copied().fold(f64::INFINITY, f64::min);
     assert!(
         min_x > 20.0,
         "Expected translated to x≈25, got min_x={min_x}"
@@ -427,7 +459,7 @@ fn test_scalar_vector_mul() {
 
 #[test]
 fn test_ring_of_children() {
-    let code = r#"
+    let code = r"
 module ring(radius, count){
     for (a = [0 : count - 1]) {
         angle = a * 360 / count;
@@ -436,7 +468,7 @@ module ring(radius, count){
     }
 }
 ring(20, 4) { cube(3); }
-"#;
+";
     let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
@@ -453,7 +485,7 @@ ring(20, 4) { cube(3); }
 
 #[test]
 fn test_candle_stand() {
-    let code = r#"
+    let code = r"
 length=50; radius=25; count=7; centerCandle=true;
 candleSize=7; width=4; holeSize=3; CenterCandleWidth=4;
 heightOfSupport=3; widthOfSupport=3; heightOfRing=4; widthOfRing=23;
@@ -502,7 +534,7 @@ module make_ring_of(radius, count){
             children();
     }
 }
-"#;
+";
     let result = compile_with_timeout(code, 0);
     match result {
         CompilationResult::Success { parts, .. } => {
@@ -516,13 +548,13 @@ module make_ring_of(radius, count){
 
 #[test]
 fn test_hull_sphere_cube() {
-    let code = r#"
+    let code = r"
 $fn = 30;
 hull() {
     sphere(r=14);
     translate([0, 30, 0]) cube([30, 4, 30], center=true);
 }
-"#;
+";
     let csg = compile_to_csg_mesh(code);
     let result = csg_mesh_to_mesh_data_local(&csg).expect("mesh conversion failed");
     assert!(result.positions.len() > 10);
@@ -530,27 +562,27 @@ hull() {
 
 #[test]
 fn test_intersection_sphere_cube() {
-    let code = r#"
+    let code = r"
 $fn = 30;
 intersection() {
     sphere(r=14);
     translate([-14, -14, -14]) cube([28, 28, 14.4]);
 }
-"#;
+";
     let csg = compile_to_csg_mesh(code);
     let result = csg_mesh_to_mesh_data_local(&csg).expect("mesh conversion failed");
     assert!(result.positions.len() > 10);
 }
 
 #[test]
-fn symbolic_rotated_hull_uses_finite_output_fallback() {
-    let code = r#"
+fn symbolic_rotated_hull_uses_exact_retained_facts() {
+    let code = r"
         $fn = 6;
         hull() {
             cube([6, 2, 5], center=true);
             translate([0, 5, 2]) rotate([-35, 0, 0]) cylinder(h=2, r1=2, r2=3);
         }
-    "#;
+    ";
     let mesh = compile_to_csg_mesh(code);
     assert!(!mesh.polygons.is_empty());
     let rendered = csg_mesh_to_mesh_data_local(&mesh).expect("mesh conversion failed");
@@ -560,20 +592,20 @@ fn symbolic_rotated_hull_uses_finite_output_fallback() {
 #[test]
 #[ignore = "expensive exact hull Boolean stress; run in release mode"]
 fn test_difference_hull_shapes() {
-    let outer = r#"
+    let outer = r"
         $fn = 6;
         hull() {
         translate([0, 0, 0]) cube([36, 4, 33], center=true);
         translate([0, 25, 10]) rotate([-35, 0, 0]) cylinder(h=8, r1=14, r2=22);
         }
-    "#;
-    let inner = r#"
+    ";
+    let inner = r"
         $fn = 6;
         hull() {
         translate([0, 0, 0]) sphere(r=12.5);
         translate([0, 25, 10]) rotate([-35, 0, 0]) cylinder(h=9, r1=12.5, r2=20);
         }
-    "#;
+    ";
     let outer_mesh = compile_to_csg_mesh(outer);
     let inner_mesh = compile_to_csg_mesh(inner);
     assert!(!outer_mesh.polygons.is_empty(), "outer hull is empty");
@@ -593,7 +625,7 @@ fn test_refill_clip() {
     assert!(result.positions.len() > 100);
 }
 
-const REFILL_CLIP_CODE: &str = r#"
+const REFILL_CLIP_CODE: &str = r"
 $fn = 60;
 TANK_TOP_WIDTH = 256;
 TANK_BOTTOM_WIDTH = 244;
@@ -729,7 +761,7 @@ module RefillClip() {
 }
 
 RefillClip();
-"#;
+";
 
 fn example_path(relative: &str) -> String {
     format!(
@@ -781,9 +813,8 @@ fn assert_example_matches_reference(relative: &str) {
         "{}/tests/openscad_references/{ref_name}",
         env!("CARGO_MANIFEST_DIR")
     );
-    let ref_json = match std::fs::read_to_string(&ref_path) {
-        Ok(json) => json,
-        Err(_) => return,
+    let Ok(ref_json) = std::fs::read_to_string(&ref_path) else {
+        return;
     };
     assert_example_matches_reference_data(relative, &parts, &ref_json, 0.20);
 }
@@ -801,14 +832,18 @@ fn assert_example_matches_reference_loose(relative: &str) {
         "{}/tests/openscad_references/{ref_name}",
         env!("CARGO_MANIFEST_DIR")
     );
-    let ref_json = match std::fs::read_to_string(&ref_path) {
-        Ok(json) => json,
-        Err(_) => return,
+    let Ok(ref_json) = std::fs::read_to_string(&ref_path) else {
+        return;
     };
     // Very loose tolerance (200%) for things like text or complex boolean ops
     assert_example_matches_reference_data(relative, &parts, &ref_json, 2.0);
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
 fn assert_example_matches_reference_data(
     relative: &str,
     parts: &[crate::compiler::MeshData],
@@ -848,11 +883,7 @@ fn assert_example_matches_reference_data(
         );
     }
 
-    let facet_diff = if our_triangles > reference.facets {
-        our_triangles - reference.facets
-    } else {
-        reference.facets - our_triangles
-    };
+    let facet_diff = our_triangles.abs_diff(reference.facets);
     let facet_tol = (reference.facets as f64 * tolerance) as usize;
     assert!(
         facet_diff <= facet_tol,
@@ -1059,9 +1090,8 @@ fn assert_example_matches_reference_very_loose(relative: &str) {
         "{}/tests/openscad_references/{ref_name}",
         env!("CARGO_MANIFEST_DIR")
     );
-    let ref_json = match std::fs::read_to_string(&ref_path) {
-        Ok(json) => json,
-        Err(_) => return,
+    let Ok(ref_json) = std::fs::read_to_string(&ref_path) else {
+        return;
     };
     // Extremely loose tolerance (500%) for tests with huge facet count discrepancies (e.g. text or high-res booleans)
     assert_example_matches_reference_data(relative, &parts, &ref_json, 5.0);
@@ -1081,7 +1111,7 @@ fn openscad_basics_dodecahedron_difference() {
 }
 
 fn dodecahedron_scad() -> &'static str {
-    r#"
+    r"
     phi = (1 + sqrt(5)) / 2;
     points = [
         [ 1,  1,  1], [ 1,  1, -1], [ 1, -1,  1], [ 1, -1, -1],
@@ -1096,7 +1126,7 @@ fn dodecahedron_scad() -> &'static str {
         [2,13,3,17,16], [3,13,15,7,11], [4,14,5,19,18],
         [4,18,6,10,8],  [5,9,11,7,19],  [6,18,19,7,15]
     ];
-    "#
+    "
 }
 
 #[test]

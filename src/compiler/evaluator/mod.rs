@@ -1,3 +1,4 @@
+use csgrs::Real;
 use openscad_rs::ast::{Argument, Expr, Parameter, SourceFile, Statement};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -666,6 +667,10 @@ impl Evaluator {
 
     pub fn get_arg_number(args: &[(Option<String>, Value)], name: &str, pos: usize) -> Option<f64> {
         Self::get_arg(args, name, pos).and_then(Value::as_number)
+    }
+
+    pub fn get_arg_real(args: &[(Option<String>, Value)], name: &str, pos: usize) -> Option<Real> {
+        Self::get_arg(args, name, pos).and_then(Value::as_real)
     }
 
     pub fn get_arg_bool(

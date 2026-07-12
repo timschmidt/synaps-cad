@@ -21,8 +21,8 @@ fn nalgebra_vector_to_profile_normal(vector: &NalgebraVector3<f64>) -> Vector3 {
     Vector3::new([to_real(vector[0]), to_real(vector[1]), to_real(vector[2])])
 }
 
-fn point_from_f64(point: &[f64; 3]) -> Point3 {
-    Point3::new(to_real(point[0]), to_real(point[1]), to_real(point[2]))
+fn point_from_real(point: &[Real; 3]) -> Point3 {
+    Point3::new(point[0].clone(), point[1].clone(), point[2].clone())
 }
 
 impl Evaluator {
@@ -36,22 +36,22 @@ impl Evaluator {
         let center = Self::get_arg_bool(args, "center", 1, false);
 
         let mesh = match size_val {
-            Value::Number(s) => {
-                let m = CsgMesh::cube(to_real(*s), ());
+            Value::Number(_) | Value::Exact(_) => {
+                let m = CsgMesh::cube(size_val.as_real()?, ());
                 if center { m.center() } else { m }
             }
             Value::List(dims) => {
-                let nums: Vec<f64> = dims.iter().filter_map(Value::as_number).collect();
+                let nums: Vec<Real> = dims.iter().filter_map(Value::as_real).collect();
                 let (x, y, z) = match nums.len() {
-                    1 => (nums[0], nums[0], nums[0]),
-                    2 => (nums[0], nums[1], 1.0),
+                    1 => (nums[0].clone(), nums[0].clone(), nums[0].clone()),
+                    2 => (nums[0].clone(), nums[1].clone(), Real::one()),
                     _ => (
-                        nums.first().copied().unwrap_or(1.0),
-                        nums.get(1).copied().unwrap_or(1.0),
-                        nums.get(2).copied().unwrap_or(1.0),
+                        nums.first().cloned().unwrap_or_else(Real::one),
+                        nums.get(1).cloned().unwrap_or_else(Real::one),
+                        nums.get(2).cloned().unwrap_or_else(Real::one),
                     ),
                 };
-                let m = CsgMesh::cube(to_real(1.0), ()).scale(to_real(x), to_real(y), to_real(z));
+                let m = CsgMesh::cube(Real::one(), ()).scale(x, y, z);
                 if center { m.center() } else { m }
             }
             _ => return None,
@@ -62,47 +62,44 @@ impl Evaluator {
 
     #[must_use]
     pub fn eval_sphere(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
-        let r = Self::get_arg_number(args, "r", 0)
-            .or_else(|| Self::get_arg_number(args, "d", 0).map(|d| d / 2.0))
-            .unwrap_or(1.0);
+        let r = Self::get_arg_real(args, "r", 0)
+            .or_else(|| Self::get_arg_real(args, "d", 0).and_then(|d| (d / 2.0).ok()))
+            .unwrap_or_else(Real::one);
 
-        let slices = self.resolve_fn_with_radius(args, Some(r));
+        let slices = self.resolve_fn_with_radius(args, r.to_f64_lossy());
         let stacks = slices / 2;
 
-        Some(Shape::from_csg_mesh(CsgMesh::sphere(
-            to_real(r),
-            slices,
-            stacks,
-            (),
-        )))
+        Some(Shape::from_csg_mesh(CsgMesh::sphere(r, slices, stacks, ())))
     }
 
     #[must_use]
     pub fn eval_cylinder(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
-        let h = Self::get_arg_number(args, "h", 0)
-            .or_else(|| Self::get_arg_number(args, "height", 0))
-            .unwrap_or(1.0);
+        let h = Self::get_arg_real(args, "h", 0)
+            .or_else(|| Self::get_arg_real(args, "height", 0))
+            .unwrap_or_else(Real::one);
 
         // Handle d/d1/d2 (diameter) as well as r/r1/r2
-        let r1 = Self::get_arg_number(args, "r1", 99)
-            .or_else(|| Self::get_arg_number(args, "d1", 99).map(|d| d / 2.0))
-            .or_else(|| Self::get_arg_number(args, "r", 1))
-            .or_else(|| Self::get_arg_number(args, "d", 1).map(|d| d / 2.0))
-            .unwrap_or(1.0);
-        let r2 = Self::get_arg_number(args, "r2", 99)
-            .or_else(|| Self::get_arg_number(args, "d2", 99).map(|d| d / 2.0))
-            .unwrap_or(r1);
+        let half = |d: Real| (d / 2.0).ok();
+        let r1 = Self::get_arg_real(args, "r1", 99)
+            .or_else(|| Self::get_arg_real(args, "d1", 99).and_then(half))
+            .or_else(|| Self::get_arg_real(args, "r", 1))
+            .or_else(|| Self::get_arg_real(args, "d", 1).and_then(half))
+            .unwrap_or_else(Real::one);
+        let r2 = Self::get_arg_real(args, "r2", 99)
+            .or_else(|| Self::get_arg_real(args, "d2", 99).and_then(half))
+            .unwrap_or_else(|| r1.clone());
 
         let center = Self::get_arg_bool(args, "center", 99, false);
         // Use max radius to determine segments
-        let slices = self.resolve_fn_with_radius(args, Some(r1.max(r2)));
+        let max_radius = r1.max(&r2).to_f64_lossy();
+        let slices = self.resolve_fn_with_radius(args, max_radius);
 
         // For cones (r1 != r2): use CsgMesh::frustum which correctly
         // handles zero-radius (emits triangles, not degenerate quads).
-        let m = if (r1 - r2).abs() < 1e-12 {
-            CsgMesh::cylinder(to_real(r1), to_real(h), slices, ())
+        let m = if r1 == r2 {
+            CsgMesh::cylinder(r1, h, slices, ())
         } else {
-            CsgMesh::frustum(to_real(r1), to_real(r2), to_real(h), slices, ())
+            CsgMesh::frustum(r1, r2, h, slices, ())
         };
         let m = if center { m.center() } else { m };
 
@@ -121,13 +118,13 @@ impl Evaluator {
         let faces_val =
             Self::get_arg(args, "faces", 1).or_else(|| Self::get_arg(args, "triangles", 1));
 
-        let points: Vec<[f64; 3]> = points_val
+        let points: Vec<[Real; 3]> = points_val
             .as_list()?
             .iter()
             .filter_map(|v| {
-                let nums = v.to_number_list()?;
+                let nums = v.to_real_list()?;
                 if nums.len() >= 3 {
-                    Some([nums[0], nums[1], nums[2]])
+                    Some([nums[0].clone(), nums[1].clone(), nums[2].clone()])
                 } else {
                     None
                 }
@@ -177,24 +174,31 @@ impl Evaluator {
                 continue;
             }
             // Compute face normal
-            let v0 = NalgebraVector3::new(pts[0][0], pts[0][1], pts[0][2]);
-            let v1 = NalgebraVector3::new(pts[1][0], pts[1][1], pts[1][2]);
-            let v2 = NalgebraVector3::new(pts[2][0], pts[2][1], pts[2][2]);
+            let approximate = |point: &[Real; 3]| {
+                NalgebraVector3::new(
+                    point[0].to_f64_lossy().unwrap_or(0.0),
+                    point[1].to_f64_lossy().unwrap_or(0.0),
+                    point[2].to_f64_lossy().unwrap_or(0.0),
+                )
+            };
+            let v0 = approximate(pts[0]);
+            let v1 = approximate(pts[1]);
+            let v2 = approximate(pts[2]);
             let normal =
                 nalgebra_vector_to_profile_normal(&(v1 - v0).cross(&(v2 - v0)).normalize());
 
             if pts.len() == 3 {
                 let verts: Vec<_> = pts
                     .iter()
-                    .map(|p| Vertex::new(point_from_f64(p), normal.clone()))
+                    .map(|p| Vertex::new(point_from_real(p), normal.clone()))
                     .collect();
                 polygons.push(Polygon::new(verts, ()));
             } else {
                 // Fan-triangulate N-gons (N>3)
-                let p0 = point_from_f64(pts[0]);
+                let p0 = point_from_real(pts[0]);
                 for i in 1..pts.len() - 1 {
-                    let p1 = point_from_f64(pts[i]);
-                    let p2 = point_from_f64(pts[i + 1]);
+                    let p1 = point_from_real(pts[i]);
+                    let p2 = point_from_real(pts[i + 1]);
                     let verts = vec![
                         Vertex::new(p0.clone(), normal.clone()),
                         Vertex::new(p1, normal.clone()),
@@ -217,12 +221,12 @@ impl Evaluator {
 
     #[must_use]
     pub fn eval_circle(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
-        let r = Self::get_arg_number(args, "r", 0)
-            .or_else(|| Self::get_arg_number(args, "d", 0).map(|d| d / 2.0))
-            .unwrap_or(1.0);
+        let r = Self::get_arg_real(args, "r", 0)
+            .or_else(|| Self::get_arg_real(args, "d", 0).and_then(|d| (d / 2.0).ok()))
+            .unwrap_or_else(Real::one);
 
-        let slices = self.resolve_fn_with_radius(args, Some(r));
-        Some(Shape::Sketch2D(Profile::circle(to_real(r), slices)))
+        let slices = self.resolve_fn_with_radius(args, r.to_f64_lossy());
+        Some(Shape::Sketch2D(Profile::circle(r, slices)))
     }
 
     #[allow(clippy::unused_self)]
@@ -231,12 +235,12 @@ impl Evaluator {
         let center = Self::get_arg_bool(args, "center", 1, false);
 
         let sketch = match size_val {
-            Value::Number(s) => Profile::square(to_real(*s)),
+            Value::Number(_) | Value::Exact(_) => Profile::square(size_val.as_real()?),
             Value::List(dims) => {
-                let nums: Vec<f64> = dims.iter().filter_map(Value::as_number).collect();
-                let w = nums.first().copied().unwrap_or(1.0);
-                let h = nums.get(1).copied().unwrap_or(w);
-                Profile::rectangle(to_real(w), to_real(h))
+                let nums: Vec<Real> = dims.iter().filter_map(Value::as_real).collect();
+                let w = nums.first().cloned().unwrap_or_else(Real::one);
+                let h = nums.get(1).cloned().unwrap_or_else(|| w.clone());
+                Profile::rectangle(w, h)
             }
             _ => return None,
         };
@@ -249,13 +253,13 @@ impl Evaluator {
     #[must_use]
     pub fn eval_polygon(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
         let points_val = Self::get_arg(args, "points", 0)?;
-        let points: Vec<[f64; 2]> = points_val
+        let points: Vec<[Real; 2]> = points_val
             .as_list()?
             .iter()
             .filter_map(|v| {
-                let nums = v.to_number_list()?;
+                let nums = v.to_real_list()?;
                 if nums.len() >= 2 {
-                    Some([nums[0], nums[1]])
+                    Some([nums[0].clone(), nums[1].clone()])
                 } else {
                     None
                 }
@@ -265,10 +269,6 @@ impl Evaluator {
         if points.len() < 3 {
             return None;
         }
-        let points = points
-            .iter()
-            .map(|p| [to_real(p[0]), to_real(p[1])])
-            .collect::<Vec<_>>();
         Some(Shape::Sketch2D(Profile::polygon(&points)))
     }
 
@@ -278,6 +278,7 @@ impl Evaluator {
         let text_str = match Self::get_arg(args, "text", 0) {
             Some(Value::String(s)) => s.clone(),
             Some(Value::Number(n)) => format!("{n}"),
+            Some(Value::Exact(n)) => format!("{n}"),
             _ => return None,
         };
 

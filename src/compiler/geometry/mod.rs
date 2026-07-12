@@ -103,8 +103,7 @@ impl Shape {
     }
 
     #[must_use]
-    pub fn translate(self, x: f64, y: f64, z: f64) -> Self {
-        let (x, y, z) = (Self::to_real(x), Self::to_real(y), Self::to_real(z));
+    pub fn translate(self, x: Real, y: Real, z: Real) -> Self {
         let zero = Self::to_real(0.0);
         let epsilon = Self::to_real(1e-12);
         match self {
@@ -121,8 +120,7 @@ impl Shape {
     }
 
     #[must_use]
-    pub fn rotate(self, x: f64, y: f64, z: f64) -> Self {
-        let (x, y, z) = (Self::to_real(x), Self::to_real(y), Self::to_real(z));
+    pub fn rotate(self, x: Real, y: Real, z: Real) -> Self {
         let zero = Self::to_real(0.0);
         let epsilon = Self::to_real(1e-12);
         match self {
@@ -139,8 +137,7 @@ impl Shape {
     }
 
     #[must_use]
-    pub fn scale(self, sx: f64, sy: f64, sz: f64) -> Self {
-        let (sx, sy, sz) = (Self::to_real(sx), Self::to_real(sy), Self::to_real(sz));
+    pub fn scale(self, sx: Real, sy: Real, sz: Real) -> Self {
         let one = Self::to_real(1.0);
         let epsilon = Self::to_real(1e-12);
         match self {
@@ -157,15 +154,11 @@ impl Shape {
     }
 
     #[must_use]
-    pub fn mirror(self, nx: f64, ny: f64, nz: f64) -> Self {
-        let len = (nx.mul_add(nx, ny.mul_add(ny, nz * nz))).sqrt();
-        if len < 1e-12 {
+    pub fn mirror(self, nx: Real, ny: Real, nz: Real) -> Self {
+        if nx == Real::zero() && ny == Real::zero() && nz == Real::zero() {
             return self;
         }
-        let plane = Plane::from_normal(
-            Vector3::new([Self::to_real(nx), Self::to_real(ny), Self::to_real(nz)]),
-            Real::zero(),
-        );
+        let plane = Plane::from_normal(Vector3::new([nx, ny, nz]), Real::zero());
         match self {
             Self::Mesh3D(m) => Self::Mesh3D(m.mirror(plane)),
             Self::Sketch2D(s) => Self::Sketch2D(s.mirror(plane)),

@@ -1,6 +1,9 @@
+use csgrs::Real;
+
 #[derive(Debug, Clone)]
 pub enum Value {
     Number(f64),
+    Exact(Real),
     Bool(bool),
     List(Vec<Self>),
     String(String),
@@ -10,9 +13,19 @@ pub enum Value {
 
 impl Value {
     #[must_use]
-    pub const fn as_number(&self) -> Option<f64> {
+    pub fn as_number(&self) -> Option<f64> {
         match self {
             Self::Number(n) => Some(*n),
+            Self::Exact(n) => n.to_f64_lossy(),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_real(&self) -> Option<Real> {
+        match self {
+            Self::Number(n) => Real::try_from(*n).ok(),
+            Self::Exact(n) => Some(n.clone()),
             _ => None,
         }
     }
@@ -22,6 +35,7 @@ impl Value {
         match self {
             Self::Bool(b) => *b,
             Self::Number(n) => *n != 0.0,
+            Self::Exact(n) => n != &Real::zero(),
             Self::String(s) => !s.is_empty(),
             Self::List(l) => !l.is_empty(),
             Self::Undef => false,
@@ -41,6 +55,12 @@ impl Value {
     pub fn to_number_list(&self) -> Option<Vec<f64>> {
         self.as_list()
             .map(|l| l.iter().filter_map(Self::as_number).collect())
+    }
+
+    #[must_use]
+    pub fn to_real_list(&self) -> Option<Vec<Real>> {
+        self.as_list()
+            .map(|l| l.iter().filter_map(Self::as_real).collect())
     }
 
     /// Expand ranges into lists for iteration.

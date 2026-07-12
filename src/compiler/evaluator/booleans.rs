@@ -6,10 +6,6 @@ use super::{Evaluator, Value};
 use crate::compiler::geometry::{BoolOp, Shape};
 
 impl Evaluator {
-    fn to_real(value: f64) -> Real {
-        Real::try_from(value).ok().unwrap_or_else(Real::zero)
-    }
-
     #[allow(clippy::missing_panics_doc)]
     pub fn eval_boolean_op(&mut self, children: &[Statement], op: BoolOp) -> Option<Shape> {
         let child_shapes = self.eval_children(children);
@@ -59,8 +55,8 @@ impl Evaluator {
         children: &[Statement],
         args: &[(Option<String>, Value)],
     ) -> Option<Shape> {
-        let r = Self::get_arg_number(args, "r", 99);
-        let delta = Self::get_arg_number(args, "delta", 99);
+        let r = Self::get_arg_real(args, "r", 99);
+        let delta = Self::get_arg_real(args, "delta", 99);
 
         let child_shapes = self.eval_children(children);
         if child_shapes.is_empty() {
@@ -69,8 +65,10 @@ impl Evaluator {
         let sketch = self.shapes_to_sketch(&child_shapes)?;
 
         if let Some(r_val) = r {
-            if r_val.abs() > 1e-12 {
-                let distance = Self::to_real(r_val);
+            if r_val == Real::zero() {
+                Some(Shape::Sketch2D(sketch))
+            } else {
+                let distance = r_val;
                 let offset = sketch.offset_rounded(distance.clone());
                 Some(Shape::Sketch2D(
                     if offset.is_empty() && !sketch.is_empty() {
@@ -79,19 +77,19 @@ impl Evaluator {
                         offset
                     },
                 ))
-            } else {
-                Some(Shape::Sketch2D(sketch))
             }
         } else if let Some(d_val) = delta {
-            if d_val.abs() > 1e-12 {
-                Some(Shape::Sketch2D(sketch.offset(Self::to_real(d_val))))
-            } else {
+            if d_val == Real::zero() {
                 Some(Shape::Sketch2D(sketch))
+            } else {
+                Some(Shape::Sketch2D(sketch.offset(d_val)))
             }
         } else {
-            let d = Self::get_arg_number(args, "", 0).unwrap_or(0.0);
-            if d.abs() > 1e-12 {
-                let distance = Self::to_real(d);
+            let d = Self::get_arg_real(args, "", 0).unwrap_or_else(Real::zero);
+            if d == Real::zero() {
+                Some(Shape::Sketch2D(sketch))
+            } else {
+                let distance = d;
                 let offset = sketch.offset_rounded(distance.clone());
                 Some(Shape::Sketch2D(
                     if offset.is_empty() && !sketch.is_empty() {
@@ -100,8 +98,6 @@ impl Evaluator {
                         offset
                     },
                 ))
-            } else {
-                Some(Shape::Sketch2D(sketch))
             }
         }
     }
@@ -117,12 +113,7 @@ impl Evaluator {
             all_polygons.extend(mesh.polygons);
         }
         let combined = CsgMesh::from_polygons(all_polygons);
-        let exact_hull = combined.convex_hull(());
-        if !exact_hull.polygons.is_empty() {
-            return Some(Shape::from_csg_mesh(exact_hull));
-        }
-
-        Some(Shape::from_csg_mesh(combined.convex_hull_finite_output(())))
+        Some(Shape::from_csg_mesh(combined.convex_hull(())))
     }
 
     pub fn eval_color_into(

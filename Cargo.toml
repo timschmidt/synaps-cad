@@ -19,8 +19,8 @@ base64 = "0.22"
 reqwest = { version = "0.13", features = ["json"] }
 # Hyper sibling dependency switch: keep both local path and crates.io lines; do not remove either.
 # Development mode uses the local path line. For release, comment it and uncomment the crates.io line.
-csgrs = { path = "../csgrs", features = ["chull-io", "offset"] }
-# csgrs = { version = "0.23.0", features = ["chull-io", "offset"] }
+csgrs = { path = "../csgrs", features = ["offset"] }
+# csgrs = { version = "0.23.0", features = ["offset"] }
 nalgebra = "0.34"
 hyperlattice = { path = "../hyperlattice" }
 hyperreal = { path = "../hyperreal", optional = true, features = ["dispatch-trace"] }

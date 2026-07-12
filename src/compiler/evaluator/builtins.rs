@@ -1,4 +1,5 @@
 use super::{Evaluator, UserFunction, Value};
+use csgrs::Real;
 use openscad_rs::ast::{BinaryOp, Expr, ExprKind, UnaryOp};
 
 impl Evaluator {
@@ -47,6 +48,7 @@ impl Evaluator {
                 match op {
                     UnaryOp::Negate => match inner {
                         Value::Number(n) => Value::Number(-n),
+                        Value::Exact(n) => Value::Exact(-n),
                         _ => Value::Undef,
                     },
                     UnaryOp::Not => Value::Bool(!inner.as_bool()),
@@ -256,6 +258,36 @@ impl Evaluator {
                 BinaryOp::LogicalOr => Value::Bool(a != 0.0 || b != 0.0),
                 _ => Value::Undef,
             },
+            (
+                a @ (Value::Number(_) | Value::Exact(_)),
+                b @ (Value::Number(_) | Value::Exact(_)),
+            ) => {
+                let Some(a) = a.as_real() else {
+                    return Value::Undef;
+                };
+                let Some(b) = b.as_real() else {
+                    return Value::Undef;
+                };
+                match op {
+                    BinaryOp::Add => Value::Exact(a + b),
+                    BinaryOp::Subtract => Value::Exact(a - b),
+                    BinaryOp::Multiply => Value::Exact(a * b),
+                    BinaryOp::Divide => (a / b).map_or(Value::Undef, Value::Exact),
+                    BinaryOp::Modulo => a
+                        .rem_euclid_certified(&b)
+                        .map_or(Value::Undef, Value::Exact),
+                    BinaryOp::Exponent => a.pow(b).map_or(Value::Undef, Value::Exact),
+                    BinaryOp::Less => Value::Bool(a < b),
+                    BinaryOp::Greater => Value::Bool(a > b),
+                    BinaryOp::LessEqual => Value::Bool(a <= b),
+                    BinaryOp::GreaterEqual => Value::Bool(a >= b),
+                    BinaryOp::Equal => Value::Bool(a == b),
+                    BinaryOp::NotEqual => Value::Bool(a != b),
+                    BinaryOp::LogicalAnd => Value::Bool(a != Real::zero() && b != Real::zero()),
+                    BinaryOp::LogicalOr => Value::Bool(a != Real::zero() || b != Real::zero()),
+                    _ => Value::Undef,
+                }
+            }
             (Value::Bool(a), Value::Bool(b)) => match op {
                 BinaryOp::LogicalAnd => Value::Bool(a && b),
                 BinaryOp::LogicalOr => Value::Bool(a || b),
@@ -268,33 +300,52 @@ impl Evaluator {
                 BinaryOp::NotEqual => Value::Bool(a != b),
                 _ => Value::Undef,
             },
-            (Value::Number(s), Value::List(l)) | (Value::List(l), Value::Number(s))
+            (s @ (Value::Number(_) | Value::Exact(_)), Value::List(l))
+            | (Value::List(l), s @ (Value::Number(_) | Value::Exact(_)))
                 if matches!(op, BinaryOp::Multiply) =>
             {
-                fn scale_list(l: &[Value], s: f64) -> Vec<Value> {
+                fn scale_list(l: &[Value], s: &Value) -> Vec<Value> {
                     l.iter()
                         .map(|v| match v {
-                            Value::Number(n) => Value::Number(n * s),
+                            Value::Number(n) if matches!(s, Value::Number(_)) => {
+                                Value::Number(n * s.as_number().unwrap_or(0.0))
+                            }
+                            Value::Number(_) | Value::Exact(_) => v
+                                .as_real()
+                                .zip(s.as_real())
+                                .map_or(Value::Undef, |(n, scale)| Value::Exact(n * scale)),
                             Value::List(inner) => Value::List(scale_list(inner, s)),
                             other => other.clone(),
                         })
                         .collect()
                 }
-                Value::List(scale_list(&l, s))
+                Value::List(scale_list(&l, &s))
             }
-            (Value::List(l), Value::Number(s)) if matches!(op, BinaryOp::Divide) => {
-                fn div_list(l: &[Value], s: f64) -> Vec<Value> {
+            (Value::List(l), s @ (Value::Number(_) | Value::Exact(_)))
+                if matches!(op, BinaryOp::Divide) =>
+            {
+                fn div_list(l: &[Value], s: &Value) -> Vec<Value> {
                     l.iter()
                         .map(|v| match v {
-                            Value::Number(n) => {
-                                Value::Number(if s == 0.0 { f64::NAN } else { n / s })
+                            Value::Number(n) if matches!(s, Value::Number(_)) => {
+                                let divisor = s.as_number().unwrap_or(0.0);
+                                Value::Number(if divisor == 0.0 {
+                                    f64::NAN
+                                } else {
+                                    n / divisor
+                                })
                             }
+                            Value::Number(_) | Value::Exact(_) => v
+                                .as_real()
+                                .zip(s.as_real())
+                                .and_then(|(n, divisor)| (n / divisor).ok())
+                                .map_or(Value::Undef, Value::Exact),
                             Value::List(inner) => Value::List(div_list(inner, s)),
                             other => other.clone(),
                         })
                         .collect()
                 }
-                Value::List(div_list(&l, s))
+                Value::List(div_list(&l, &s))
             }
             (Value::List(a), Value::List(b))
                 if matches!(op, BinaryOp::Add | BinaryOp::Subtract) =>
@@ -302,12 +353,25 @@ impl Evaluator {
                 let len = a.len().max(b.len());
                 let result: Vec<Value> = (0..len)
                     .map(|i| {
-                        let va = a.get(i).and_then(Value::as_number).unwrap_or(0.0);
-                        let vb = b.get(i).and_then(Value::as_number).unwrap_or(0.0);
-                        Value::Number(match op {
-                            BinaryOp::Add => va + vb,
-                            _ => va - vb,
-                        })
+                        let va = a.get(i).unwrap_or(&Value::Number(0.0));
+                        let vb = b.get(i).unwrap_or(&Value::Number(0.0));
+                        if matches!(va, Value::Exact(_)) || matches!(vb, Value::Exact(_)) {
+                            let va = va.as_real().unwrap_or_else(Real::zero);
+                            let vb = vb.as_real().unwrap_or_else(Real::zero);
+                            Value::Exact(if matches!(op, BinaryOp::Add) {
+                                va + vb
+                            } else {
+                                va - vb
+                            })
+                        } else {
+                            let va = va.as_number().unwrap_or(0.0);
+                            let vb = vb.as_number().unwrap_or(0.0);
+                            Value::Number(if matches!(op, BinaryOp::Add) {
+                                va + vb
+                            } else {
+                                va - vb
+                            })
+                        }
                     })
                     .collect();
                 Value::List(result)
@@ -323,6 +387,7 @@ impl Evaluator {
             .map(|(name, val)| {
                 let v = match val {
                     Value::Number(n) => format!("{n}"),
+                    Value::Exact(n) => format!("{n}"),
                     Value::Bool(b) => format!("{b}"),
                     Value::String(s) => format!("\"{s}\""),
                     Value::List(l) => format!("{l:?}"),
@@ -347,33 +412,94 @@ impl Evaluator {
     )]
     pub fn eval_builtin_function(&mut self, name: &str, args: &[Value]) -> Value {
         match name {
+            "exact" => match args.first() {
+                Some(Value::Exact(value)) => Value::Exact(value.clone()),
+                Some(Value::Number(value)) => {
+                    Real::try_from(*value).map_or(Value::Undef, Value::Exact)
+                }
+                Some(Value::String(value)) => {
+                    let parsed = match value.trim().to_ascii_lowercase().as_str() {
+                        "pi" => Ok(Real::pi()),
+                        "tau" => Ok(Real::tau()),
+                        "e" => Ok(Real::e()),
+                        _ => value.parse::<Real>(),
+                    };
+                    parsed.map_or_else(
+                        |error| {
+                            self.warnings
+                                .push(format!("exact() could not parse {value:?}: {error}"));
+                            Value::Undef
+                        },
+                        Value::Exact,
+                    )
+                }
+                _ => {
+                    self.warnings
+                        .push("exact() expects a number or an exact rational string".into());
+                    Value::Undef
+                }
+            },
             // Trigonometric (OpenSCAD uses degrees)
+            "sin" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .map_or(Value::Undef, |n| Value::Exact(n.to_radians().sin())),
             "sin" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.to_radians().sin())),
+            "cos" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .map_or(Value::Undef, |n| Value::Exact(n.to_radians().cos())),
             "cos" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.to_radians().cos())),
+            "tan" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .and_then(|n| n.to_radians().tan().ok())
+                .map_or(Value::Undef, Value::Exact),
             "tan" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.to_radians().tan())),
+            "asin" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .and_then(|n| n.asin().ok())
+                .map_or(Value::Undef, |n| Value::Exact(n.to_degrees())),
             "asin" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.asin().to_degrees())),
+            "acos" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .and_then(|n| n.acos().ok())
+                .map_or(Value::Undef, |n| Value::Exact(n.to_degrees())),
             "acos" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.acos().to_degrees())),
+            "atan" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .and_then(|n| n.atan().ok())
+                .map_or(Value::Undef, |n| Value::Exact(n.to_degrees())),
             "atan" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.atan().to_degrees())),
             "atan2" => {
                 if args.len() >= 2 {
+                    if args.iter().take(2).any(|v| matches!(v, Value::Exact(_))) {
+                        return match (args[0].as_real(), args[1].as_real()) {
+                            (Some(y), Some(x)) => Value::Exact(y.atan2(x).to_degrees()),
+                            _ => Value::Undef,
+                        };
+                    }
                     match (args[0].as_number(), args[1].as_number()) {
                         (Some(y), Some(x)) => Value::Number(y.atan2(x).to_degrees()),
                         _ => Value::Undef,
@@ -384,30 +510,75 @@ impl Evaluator {
             }
 
             // Math
+            "abs" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .map_or(Value::Undef, |n| Value::Exact(n.abs())),
             "abs" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.abs())),
+            "sqrt" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .and_then(|n| n.sqrt().ok())
+                .map_or(Value::Undef, Value::Exact),
             "sqrt" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.sqrt())),
+            "exp" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .and_then(|n| n.exp().ok())
+                .map_or(Value::Undef, Value::Exact),
             "exp" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.exp())),
+            "ln" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .and_then(|n| n.ln().ok())
+                .map_or(Value::Undef, Value::Exact),
             "ln" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.ln())),
+            "log" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .and_then(|n| n.log10().ok())
+                .map_or(Value::Undef, Value::Exact),
             "log" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.log10())),
+            "sign" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .map_or(Value::Undef, |n| {
+                    Value::Exact(if n > Real::zero() {
+                        Real::one()
+                    } else if n < Real::zero() {
+                        -Real::one()
+                    } else {
+                        Real::zero()
+                    })
+                }),
             "sign" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.signum())),
+            "pow" if args.iter().take(2).any(|v| matches!(v, Value::Exact(_))) => {
+                match (
+                    args.first().and_then(Value::as_real),
+                    args.get(1).and_then(Value::as_real),
+                ) {
+                    (Some(a), Some(b)) => a.pow(b).map_or(Value::Undef, Value::Exact),
+                    _ => Value::Undef,
+                }
+            }
             "pow" => {
                 if args.len() >= 2 {
                     match (args[0].as_number(), args[1].as_number()) {
@@ -420,25 +591,50 @@ impl Evaluator {
             }
 
             // Rounding
+            "round" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .and_then(|n| n.round_certified().ok())
+                .map_or(Value::Undef, |n| Value::Exact(Real::integer(n))),
             "round" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.round())),
+            "ceil" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .and_then(|n| n.ceil_certified().ok())
+                .map_or(Value::Undef, |n| Value::Exact(Real::integer(n))),
             "ceil" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.ceil())),
+            "floor" if matches!(args.first(), Some(Value::Exact(_))) => args
+                .first()
+                .and_then(Value::as_real)
+                .and_then(|n| n.floor_certified().ok())
+                .map_or(Value::Undef, |n| Value::Exact(Real::integer(n))),
             "floor" => args
                 .first()
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.floor())),
 
             // Min/max
+            "min" if args.iter().any(|v| matches!(v, Value::Exact(_))) => args
+                .iter()
+                .filter_map(Value::as_real)
+                .reduce(|a, b| if a <= b { a } else { b })
+                .map_or(Value::Undef, Value::Exact),
             "min" => args
                 .iter()
                 .filter_map(Value::as_number)
                 .reduce(f64::min)
                 .map_or(Value::Undef, Value::Number),
+            "max" if args.iter().any(|v| matches!(v, Value::Exact(_))) => args
+                .iter()
+                .filter_map(Value::as_real)
+                .reduce(|a, b| if a >= b { a } else { b })
+                .map_or(Value::Undef, Value::Exact),
             "max" => args
                 .iter()
                 .filter_map(Value::as_number)
@@ -465,14 +661,40 @@ impl Evaluator {
             // Vector operations
             "norm" => {
                 if let Some(Value::List(l)) = args.first() {
-                    let sum_sq: f64 = l.iter().filter_map(Value::as_number).map(|n| n * n).sum();
-                    Value::Number(sum_sq.sqrt())
+                    if l.iter().any(|v| matches!(v, Value::Exact(_))) {
+                        let sum_sq = l
+                            .iter()
+                            .filter_map(Value::as_real)
+                            .fold(Real::zero(), |sum, n| sum + &n * &n);
+                        sum_sq.sqrt().map_or(Value::Undef, Value::Exact)
+                    } else {
+                        let sum_sq: f64 =
+                            l.iter().filter_map(Value::as_number).map(|n| n * n).sum();
+                        Value::Number(sum_sq.sqrt())
+                    }
                 } else {
                     Value::Undef
                 }
             }
             "cross" => {
                 if args.len() >= 2 {
+                    if args.iter().take(2).any(|v| {
+                        v.as_list()
+                            .is_some_and(|l| l.iter().any(|n| matches!(n, Value::Exact(_))))
+                    }) {
+                        let a = args[0].to_real_list();
+                        let b = args[1].to_real_list();
+                        return match (a, b) {
+                            (Some(a), Some(b)) if a.len() >= 3 && b.len() >= 3 => {
+                                Value::List(vec![
+                                    Value::Exact(&a[1] * &b[2] - &a[2] * &b[1]),
+                                    Value::Exact(&a[2] * &b[0] - &a[0] * &b[2]),
+                                    Value::Exact(&a[0] * &b[1] - &a[1] * &b[0]),
+                                ])
+                            }
+                            _ => Value::Undef,
+                        };
+                    }
                     let a = args[0].to_number_list();
                     let b = args[1].to_number_list();
                     match (a, b) {
@@ -491,7 +713,10 @@ impl Evaluator {
             // Type checking
             "is_undef" => Value::Bool(matches!(args.first(), Some(Value::Undef) | None)),
             "is_list" => Value::Bool(matches!(args.first(), Some(Value::List(_)))),
-            "is_num" => Value::Bool(matches!(args.first(), Some(Value::Number(_)))),
+            "is_num" => Value::Bool(matches!(
+                args.first(),
+                Some(Value::Number(_) | Value::Exact(_))
+            )),
             "is_string" => Value::Bool(matches!(args.first(), Some(Value::String(_)))),
             "is_bool" => Value::Bool(matches!(args.first(), Some(Value::Bool(_)))),
 
@@ -501,6 +726,7 @@ impl Evaluator {
                     .iter()
                     .map(|v| match v {
                         Value::Number(n) => format!("{n}"),
+                        Value::Exact(n) => format!("{n}"),
                         Value::Bool(b) => format!("{b}"),
                         Value::String(s) => s.clone(),
                         Value::Undef => "undef".into(),
@@ -608,6 +834,7 @@ impl Evaluator {
 fn format_value(value: &Value) -> String {
     match value {
         Value::Number(number) => number.to_string(),
+        Value::Exact(number) => number.to_string(),
         Value::Bool(value) => value.to_string(),
         Value::List(values) => format!("{values:?}"),
         Value::String(value) => value.clone(),

@@ -108,6 +108,20 @@ When an env var is set on desktop, the UI shows it as active. You can also enter
 
 This opens a window with a 3D viewport on the right and a side panel on the left containing the code editor and AI chat.
 
+### Exact Numbers
+
+SynapsCAD extends OpenSCAD expressions with `exact()`. Pass a string to construct a rational or symbolic hyperreal without first rounding through a floating-point value:
+
+```openscad
+third = exact("1/3");
+angle = exact("pi");
+
+translate([cos(exact("60")), sin(exact("30")), 0])
+    cube([third, exact("2/5"), exact("3/7")]);
+```
+
+Rational strings may contain integers, decimals, or fractions. The symbolic strings `"pi"`, `"tau"`, and `"e"` construct the corresponding exact constants. Arithmetic, degree-based trigonometric functions, vectors, primitive dimensions, polygon and polyhedron coordinates, translations, Euler and axis-aligned rotations, scales, mirrors, offsets, and extrusion parameters retain exact values through the csgrs geometry pipeline. Passing an ordinary numeric expression to `exact()` preserves its already-parsed binary value; use a string when its decimal or rational meaning must be exact.
+
 ### Basic Workflow
 
 1. Write or edit OpenSCAD code in the editor panel
