@@ -8,14 +8,20 @@ use crate::compiler::types::MeshData;
 /// Returns an error if the mesh has no vertices.
 #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 pub fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
-    let mut positions = Vec::new();
-    let mut normals = Vec::new();
-    let mut indices = Vec::new();
+    let vertex_capacity = mesh
+        .polygons
+        .iter()
+        .map(|polygon| polygon.vertices().len().saturating_sub(2) * 3)
+        .sum();
+    let mut positions = Vec::with_capacity(vertex_capacity);
+    let mut normals = Vec::with_capacity(vertex_capacity);
+    let mut indices = Vec::with_capacity(vertex_capacity);
 
     for poly in &mesh.polygons {
-        for triangle in poly.triangulate_finite_output() {
+        for triangle in poly.triangulate_indices_finite_output() {
             let idx = positions.len() as u32;
-            let triangle_positions = triangle.each_ref().map(|vertex| {
+            let triangle_positions = triangle.map(|vertex_index| {
+                let vertex = &poly.vertices()[vertex_index];
                 let p = &vertex.position;
                 let x = p.x.to_f64_lossy().unwrap_or(0.0) as f32;
                 let y = p.y.to_f64_lossy().unwrap_or(0.0) as f32;
