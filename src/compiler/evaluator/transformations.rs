@@ -121,6 +121,11 @@ impl Evaluator {
         }
     }
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::float_cmp
+    )]
     pub fn eval_linear_extrude(
         &mut self,
         children: &[Statement],
@@ -128,24 +133,21 @@ impl Evaluator {
     ) -> Option<Shape> {
         let height = Self::get_arg_number(args, "height", 0).unwrap_or(1.0);
         let twist = Self::get_arg_number(args, "twist", 99).unwrap_or(0.0);
-        let scale = Self::get_named_arg(args, "scale")
-            .map(|value| match value {
-                Value::Number(scale) => [*scale, *scale],
-                Value::List(_) => {
-                    let values = value.to_number_list().unwrap_or_default();
-                    [
-                        values.first().copied().unwrap_or(1.0),
-                        values.get(1).copied().unwrap_or(1.0),
-                    ]
-                }
-                _ => [1.0, 1.0],
-            })
-            .unwrap_or([1.0, 1.0]);
+        let scale = Self::get_named_arg(args, "scale").map_or([1.0, 1.0], |value| match value {
+            Value::Number(scale) => [*scale, *scale],
+            Value::List(_) => {
+                let values = value.to_number_list().unwrap_or_default();
+                [
+                    values.first().copied().unwrap_or(1.0),
+                    values.get(1).copied().unwrap_or(1.0),
+                ]
+            }
+            _ => [1.0, 1.0],
+        });
         let center = Self::get_arg_bool(args, "center", 99, false);
         let slices = Self::get_arg_number(args, "slices", 99)
             .filter(|value| value.is_finite() && *value >= 1.0)
-            .map(|value| value.round() as usize)
-            .unwrap_or_else(|| self.resolve_fn(args));
+            .map_or_else(|| self.resolve_fn(args), |value| value.round() as usize);
 
         // Collect 2D children
         let child_shapes = self.eval_children(children);

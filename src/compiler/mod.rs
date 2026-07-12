@@ -75,6 +75,7 @@ if ($view == "all") view_all();
 
 /// Full compilation pipeline: parse → evaluate → mesh conversion → rendering.
 #[must_use]
+#[allow(clippy::needless_pass_by_value)]
 pub fn compile_scad_code(
     code: &str,
     fn_override: u32,

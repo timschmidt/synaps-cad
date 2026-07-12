@@ -196,6 +196,7 @@ fn try_csg_bool(
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn csg_bool(lhs: CsgMesh<()>, rhs: CsgMesh<()>, op: BoolOp) -> Shape {
     match try_csg_bool(&lhs, &rhs, op) {
         Ok(mesh) => Shape::Mesh3D(mesh),

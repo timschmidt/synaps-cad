@@ -407,6 +407,7 @@ impl Evaluator {
             .collect()
     }
 
+    #[allow(clippy::cast_precision_loss)]
     pub fn eval_user_module_into(
         &mut self,
         user_mod: &UserModule,
@@ -462,7 +463,7 @@ impl Evaluator {
         self.depth -= 1;
     }
 
-    #[allow(clippy::missing_panics_doc)]
+    #[allow(clippy::cast_precision_loss, clippy::missing_panics_doc)]
     pub fn eval_user_module(
         &mut self,
         user_mod: &UserModule,
@@ -727,6 +728,7 @@ impl Evaluator {
         shapes
     }
 
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn eval_children_instantiation(&mut self, args: &[(Option<String>, Value)]) -> Vec<Shape> {
         let indices = if let Some(index) = Self::get_arg_number(args, "index", 0) {
             if !index.is_finite() || index < 0.0 || index.fract() != 0.0 {

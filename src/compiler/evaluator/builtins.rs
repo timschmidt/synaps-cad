@@ -165,10 +165,10 @@ impl Evaluator {
                     body.as_ref()
                         .map_or(Value::Undef, |body| self.eval_expr(body))
                 } else {
-                    let message = values
-                        .get(1)
-                        .map(|(_, value)| format_value(value))
-                        .unwrap_or_else(|| "assertion failed".into());
+                    let message = values.get(1).map_or_else(
+                        || "assertion failed".into(),
+                        |(_, value)| format_value(value),
+                    );
                     self.warnings.push(format!("Assertion failed: {message}"));
                     Value::Undef
                 }
