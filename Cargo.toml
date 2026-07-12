@@ -23,6 +23,7 @@ csgrs = { path = "../csgrs", features = ["chull-io", "offset"] }
 # csgrs = { version = "0.23.0", features = ["chull-io", "offset"] }
 nalgebra = "0.34"
 hyperlattice = { path = "../hyperlattice" }
+hyperreal = { path = "../hyperreal", optional = true, features = ["dispatch-trace"] }
 url = "2"
 web-time = "1"
 
@@ -70,3 +71,14 @@ too_many_lines = "allow"
 # Run clippy and tests before cargo-release creates a version bump commit
 [package.metadata.release]
 pre-release-hook = ["cargo", "clippy", "--", "-D", "warnings"]
+
+[[bench]]
+name = "compile_default"
+harness = false
+
+[features]
+default = []
+dispatch-trace = [
+    "csgrs/dispatch-trace",
+    "dep:hyperreal",
+]

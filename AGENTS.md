@@ -43,8 +43,10 @@ Code Editor (auto-apply)
 | File                | Purpose                                                                                                                     |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `src/compiler/`     | OpenSCAD → triangle mesh pipeline. Modular directory handling evaluation, geometry, rendering, and types.                    |
+| `src/lib.rs`        | Library entry point exposing the compiler to benchmarks and other tooling.                                                  |
 | `src/main.rs`       | App entry point, registers all plugins                                                                                      |
 | `src/app_config.rs` | Developer constants (not user-facing)                                                                                       |
+| `benches/compile_default.rs` | Default-scene compiler benchmark with phase timing and optional `dispatch-trace` instrumentation.                 |
 | `web/index.html`    | Static HTML shell for the WASM build                                                                                        |
 | `.github/workflows/pages.yml` | Builds the WASM target, runs `wasm-bindgen`, and deploys the static bundle to GitHub Pages                       |
 

@@ -12,9 +12,10 @@ use bevy::winit::WinitSettings;
 use bevy_egui::EguiPlugin;
 
 mod app_config;
-pub mod compiler;
 mod export;
 mod plugins;
+
+pub use synaps_cad::compiler;
 
 fn main() {
     let primary_window = Window {

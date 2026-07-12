@@ -15,6 +15,64 @@ pub use evaluator::Evaluator;
 pub use rendering::render_orthographic_views;
 pub use types::{CompilationResult, MeshData, ViewImage};
 
+/// The scene loaded by a fresh `SynapsCAD` workspace.
+pub const DEFAULT_SCAD_CODE: &str = r#"// Welcome to SynapsCAD!
+// Switch $view to render different models
+$view = "all";
+
+// --- Snowman ---
+module view_snowman() {
+    color("white") sphere(r = 12);
+    color("white") translate([0, 0, 16]) sphere(r = 9);
+    color("white") translate([0, 0, 27]) sphere(r = 6);
+    color("orange")
+        translate([0, 6, 27])
+            rotate([90, 0, 0])
+                cylinder(h = 8, r1 = 1.5, r2 = 0);
+}
+
+// --- Rocket ---
+module view_rocket() {
+    color("silver") cylinder(h = 40, r = 8);
+    color("red")
+        translate([0, 0, 40])
+            cylinder(h = 15, r1 = 8, r2 = 0);
+    color("darkgray")
+        for (a = [0, 120, 240])
+            rotate([0, 0, a])
+                translate([6, -1, 0])
+                    cube([8, 2, 12]);
+}
+
+// --- Castle ---
+module view_castle() {
+    color("sandybrown") difference() {
+        cube([40, 40, 20], center = true);
+        cube([34, 34, 21], center = true);
+    }
+    color("tan")
+        for (x = [-18, 18])
+            for (y = [-18, 18])
+                translate([x, y, 0]) {
+                    cylinder(h = 28, r = 5);
+                    color("red") translate([0, 0, 28]) cylinder(h = 12, r1 = 6, r2 = 0);
+                }
+}
+
+// --- All Together ---
+module view_all() {
+    view_snowman();
+    translate([50, 0, 0]) view_rocket();
+    translate([0, 60, 0]) view_castle();
+}
+
+// --- View selector ---
+if ($view == "snowman") view_snowman();
+if ($view == "rocket") view_rocket();
+if ($view == "castle") view_castle();
+if ($view == "all") view_all();
+"#;
+
 /// Full compilation pipeline: parse → evaluate → mesh conversion → rendering.
 #[must_use]
 pub fn compile_scad_code(
