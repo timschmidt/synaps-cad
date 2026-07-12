@@ -323,6 +323,28 @@ fn linear_extrude_twist_and_vector_scale_produce_one_manifold() {
 }
 
 #[test]
+fn exact_240_degree_rotation_places_rocket_fin_in_the_third_sector() {
+    for degrees in [0.0_f64, 120.0, 240.0] {
+        let mesh = compile_to_csg_mesh(&format!(
+            "rotate([0, 0, {degrees}]) translate([6, -1, 0]) cube([8, 2, 12]);"
+        ));
+        let bounds = mesh.bounding_box();
+        let center_x = ((bounds.mins.x + bounds.maxs.x) / csgrs::Real::from(2))
+            .expect("nonzero center divisor")
+            .to_f64_lossy()
+            .expect("finite center x");
+        let center_y = ((bounds.mins.y + bounds.maxs.y) / csgrs::Real::from(2))
+            .expect("nonzero center divisor")
+            .to_f64_lossy()
+            .expect("finite center y");
+        let radians = degrees.to_radians();
+
+        assert!((center_x - 10.0 * radians.cos()).abs() < 1.0e-9);
+        assert!((center_y - 10.0 * radians.sin()).abs() < 1.0e-9);
+    }
+}
+
+#[test]
 fn test_scalar_vector_mul() {
     let m = compile_to_merged_mesh("r=25; translate(r * [1, 0, 0]) cube(5);");
     let xs: Vec<f64> = m.positions.iter().map(|p| p[0] as f64).collect();
