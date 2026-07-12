@@ -26,7 +26,7 @@ module view_snowman() {
     color("white") translate([0, 0, 16]) sphere(r = 9);
     color("white") translate([0, 0, 27]) sphere(r = 6);
     color("orange")
-        translate([0, 6, 27])
+        translate([0, -4, 27])
             rotate([90, 0, 0])
                 cylinder(h = 8, r1 = 1.5, r2 = 0);
 }
@@ -59,17 +59,30 @@ module view_castle() {
                 }
 }
 
+// --- Exact Hyperreal Geometry ---
+module view_exact() {
+    // Repeating rational dimensions are retained exactly rather than rounded.
+    color("deepskyblue")
+        cube([exact("20/3"), exact("25/7"), exact("13/2")]);
+    // Symbolic pi remains exact through placement and sphere construction.
+    color("gold")
+        translate([exact("40/3"), 0, exact("pi")])
+            sphere(r = exact("pi"));
+}
+
 // --- All Together ---
 module view_all() {
     view_snowman();
     translate([50, 0, 0]) view_rocket();
     translate([0, 60, 0]) view_castle();
+    translate([60, 60, 0]) view_exact();
 }
 
 // --- View selector ---
 if ($view == "snowman") view_snowman();
 if ($view == "rocket") view_rocket();
 if ($view == "castle") view_castle();
+if ($view == "exact") view_exact();
 if ($view == "all") view_all();
 "#;
 

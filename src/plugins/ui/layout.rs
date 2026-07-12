@@ -144,8 +144,7 @@ pub fn ui_layout_system(
             render_view_selector(ui, &mut scad_code);
             ui.separator();
 
-            let editor_height = (total_remaining * 0.55).max(80.0);
-            render_code_editor(ui, &mut scad_code, editor_height);
+            render_code_editor(ui, &mut scad_code);
         });
 
     occupied.left = response.response.rect.width();

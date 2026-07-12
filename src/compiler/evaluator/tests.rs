@@ -1,6 +1,6 @@
 use super::*;
 use crate::compiler::geometry::conversions::csg_mesh_to_mesh_data;
-use crate::compiler::{CompilationResult, MeshData, compile_scad_code};
+use crate::compiler::{CompilationResult, DEFAULT_SCAD_CODE, MeshData, compile_scad_code};
 use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
 use std::sync::Arc;
@@ -27,6 +27,25 @@ fn compile_with_timeout(code: &str, fn_override: u32) -> CompilationResult {
         .expect("failed to spawn compilation test thread")
         .join()
         .unwrap_or_else(|_| CompilationResult::Error("Compilation thread panicked".into()))
+}
+
+#[test]
+fn default_exact_view_compiles_both_infinite_precision_objects() {
+    let code = DEFAULT_SCAD_CODE.replace("$view = \"all\";", "$view = \"exact\";");
+    match compile_with_timeout(&code, 16) {
+        CompilationResult::Success {
+            parts, warnings, ..
+        } => {
+            assert_eq!(parts.len(), 2);
+            assert!(parts.iter().all(|part| !part.indices.is_empty()));
+            assert!(
+                warnings.is_empty(),
+                "exact default view warnings: {warnings:?}"
+            );
+        }
+        CompilationResult::Error(error) => panic!("Exact default view failed: {error}"),
+        CompilationResult::Canceled => panic!("Exact default view timed out"),
+    }
 }
 
 #[test]
