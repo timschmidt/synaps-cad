@@ -208,7 +208,7 @@ impl Evaluator {
         if polygons.is_empty() {
             return None;
         }
-        Some(Shape::from_csg_mesh(CsgMesh::from_polygons(&polygons)))
+        Some(Shape::from_csg_mesh(CsgMesh::from_polygons(polygons)))
     }
 
     // =======================================================================

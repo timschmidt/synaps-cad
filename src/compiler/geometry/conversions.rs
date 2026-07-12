@@ -122,7 +122,7 @@ mod tests {
             ],
             (),
         );
-        let mesh = Mesh::from_polygons(&[polygon]);
+        let mesh = Mesh::from_polygons(vec![polygon]);
 
         let rendered = csg_mesh_to_mesh_data(&mesh).unwrap();
 
