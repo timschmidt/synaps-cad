@@ -13,17 +13,10 @@ pub fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
     let mut indices = Vec::new();
 
     for poly in &mesh.polygons {
-        if poly.vertices.len() < 3 {
-            continue;
-        }
-        for index in 1..poly.vertices.len() - 1 {
+        for triangle in poly.triangulate() {
             let idx = positions.len() as u32;
-            let triangle_positions = [
-                &poly.vertices[0].position,
-                &poly.vertices[index].position,
-                &poly.vertices[index + 1].position,
-            ]
-            .map(|p| {
+            let triangle_positions = triangle.each_ref().map(|vertex| {
+                let p = &vertex.position;
                 let x = p.x.to_f64_lossy().unwrap_or(0.0) as f32;
                 let y = p.y.to_f64_lossy().unwrap_or(0.0) as f32;
                 let z = p.z.to_f64_lossy().unwrap_or(0.0) as f32;
@@ -102,4 +95,42 @@ pub fn axis_angle_to_euler(angle_deg: f64, ax: f64, ay: f64, az: f64) -> (f64, f
     let roll = if is_not_singular { r10.atan2(r00) } else { 0.0 };
 
     (yaw.to_degrees(), pitch.to_degrees(), roll.to_degrees())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::csg_mesh_to_mesh_data;
+    use csgrs::mesh::{Mesh, Polygon};
+    use csgrs::vertex::Vertex;
+    use hyperlattice::{Point3, Real, Vector3};
+
+    #[test]
+    fn concave_faces_are_ear_clipped_instead_of_fanned() {
+        let point = |x: i32, y: i32| {
+            Vertex::new(
+                Point3::new(Real::from(x), Real::from(y), Real::zero()),
+                Vector3::z(),
+            )
+        };
+        let polygon = Polygon::new(
+            vec![
+                point(0, 0),
+                point(2, 0),
+                point(1, 1),
+                point(2, 2),
+                point(0, 2),
+            ],
+            (),
+        );
+        let mesh = Mesh::from_polygons(&[polygon]);
+
+        let rendered = csg_mesh_to_mesh_data(&mesh).unwrap();
+
+        assert_eq!(rendered.positions.len(), 9);
+        for triangle in rendered.positions.chunks_exact(3) {
+            let [a, b, c] = triangle else { unreachable!() };
+            let area = (b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0]);
+            assert!(area.abs() > f32::EPSILON);
+        }
+    }
 }

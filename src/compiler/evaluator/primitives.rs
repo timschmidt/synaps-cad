@@ -2,7 +2,7 @@ use csgrs::Profile;
 use csgrs::Real;
 use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
-use csgrs::polygon::Polygon;
+use csgrs::mesh::Polygon;
 use csgrs::vertex::Vertex;
 use hyperlattice::{Point3, Vector3};
 use nalgebra::Vector3 as NalgebraVector3;
