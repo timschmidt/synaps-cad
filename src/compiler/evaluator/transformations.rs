@@ -1,7 +1,6 @@
 use csgrs::Profile;
 use csgrs::Real;
 use csgrs::csg::CSG;
-use csgrs::mesh::Mesh as CsgMesh;
 use openscad_rs::ast::Statement;
 
 use super::{Evaluator, Value};
@@ -129,9 +128,24 @@ impl Evaluator {
     ) -> Option<Shape> {
         let height = Self::get_arg_number(args, "height", 0).unwrap_or(1.0);
         let twist = Self::get_arg_number(args, "twist", 99).unwrap_or(0.0);
-        let scale_val = Self::get_arg_number(args, "scale", 99).unwrap_or(1.0);
+        let scale = Self::get_named_arg(args, "scale")
+            .map(|value| match value {
+                Value::Number(scale) => [*scale, *scale],
+                Value::List(_) => {
+                    let values = value.to_number_list().unwrap_or_default();
+                    [
+                        values.first().copied().unwrap_or(1.0),
+                        values.get(1).copied().unwrap_or(1.0),
+                    ]
+                }
+                _ => [1.0, 1.0],
+            })
+            .unwrap_or([1.0, 1.0]);
         let center = Self::get_arg_bool(args, "center", 99, false);
-        let slices = self.resolve_fn(args);
+        let slices = Self::get_arg_number(args, "slices", 99)
+            .filter(|value| value.is_finite() && *value >= 1.0)
+            .map(|value| value.round() as usize)
+            .unwrap_or_else(|| self.resolve_fn(args));
 
         // Collect 2D children
         let child_shapes = self.eval_children(children);
@@ -142,9 +156,21 @@ impl Evaluator {
         // Merge all children into a single sketch (if possible)
         let sketch = self.shapes_to_sketch(&child_shapes)?;
 
-        let mesh = if twist.abs() > 1e-12 || (scale_val - 1.0).abs() > 1e-12 {
-            // Twisted/scaled extrusion: approximate by layered slices
-            self.twisted_extrude(&sketch, height, twist, scale_val, slices)
+        let mesh = if twist != 0.0 || scale != [1.0, 1.0] {
+            match sketch.extrude_twisted(
+                to_real(height),
+                to_real(twist),
+                [to_real(scale[0]), to_real(scale[1])],
+                slices.max(1),
+                (),
+            ) {
+                Ok(mesh) => mesh,
+                Err(error) => {
+                    self.warnings
+                        .push(format!("linear_extrude() error: {error:?}"));
+                    return None;
+                }
+            }
         } else {
             sketch.extrude(to_real(height), ())
         };
@@ -196,53 +222,5 @@ impl Evaluator {
             }
         }
         result
-    }
-
-    /// Approximate twisted/tapered linear extrusion by stacking rotated+scaled layers.
-    #[allow(clippy::unused_self, clippy::cast_precision_loss)]
-    pub fn twisted_extrude(
-        &self,
-        sketch: &Profile,
-        height: f64,
-        twist: f64,
-        end_scale: f64,
-        n_slices: usize,
-    ) -> CsgMesh<()> {
-        let n = n_slices.max(2);
-        let mut result: Option<CsgMesh<()>> = None;
-
-        for i in 0..n {
-            let t0 = i as f64 / n as f64;
-            let t1 = (i + 1) as f64 / n as f64;
-            let z0 = height * t0;
-            let z1 = height * t1;
-            let angle0 = twist * t0;
-            let angle1 = twist * t1;
-            let s0 = (end_scale - 1.0).mul_add(t0, 1.0);
-            let s1 = (end_scale - 1.0).mul_add(t1, 1.0);
-            let layer_h = z1 - z0;
-
-            if layer_h < 1e-12 {
-                continue;
-            }
-
-            // Create a thin slice: extrude the sketch by layer height,
-            // scale, rotate, then translate to correct Z position
-            let avg_scale = f64::midpoint(s0, s1);
-            let avg_angle = f64::midpoint(angle0, angle1);
-
-            let layer = sketch
-                .extrude(to_real(layer_h), ())
-                .scale(to_real(avg_scale), to_real(avg_scale), Real::one())
-                .rotate(Real::zero(), Real::zero(), to_real(avg_angle))
-                .translate(Real::zero(), Real::zero(), to_real(z0));
-
-            result = Some(match result {
-                Some(r) => r.union(&layer),
-                None => layer,
-            });
-        }
-
-        result.unwrap_or_else(|| CsgMesh::cube(to_real(0.001), ()))
     }
 }

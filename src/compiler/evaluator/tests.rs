@@ -307,6 +307,22 @@ fn compile_to_merged_mesh(code: &str) -> MeshData {
 }
 
 #[test]
+fn linear_extrude_twist_and_vector_scale_produce_one_manifold() {
+    let mesh = compile_to_csg_mesh(
+        r"
+        linear_extrude(height = 5, twist = 135, scale = [0.75, 1.25], slices = 12)
+            difference() {
+                square([4, 4]);
+                translate([1, 1]) square([2, 2]);
+            }
+        ",
+    );
+
+    mesh.to_hypermesh_exact()
+        .expect("twisted vector-scale extrusion should be a closed manifold");
+}
+
+#[test]
 fn test_scalar_vector_mul() {
     let m = compile_to_merged_mesh("r=25; translate(r * [1, 0, 0]) cube(5);");
     let xs: Vec<f64> = m.positions.iter().map(|p| p[0] as f64).collect();
