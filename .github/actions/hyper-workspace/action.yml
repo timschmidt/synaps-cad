@@ -21,13 +21,13 @@ runs:
           git -C "${destination}" checkout --detach FETCH_HEAD
         }
 
-        checkout_repo csgrs https://github.com/timschmidt/csgrs.git cbc121d50588ecd18a22fc6a5cad7f7fc98a624b
-        checkout_repo hypercurve https://github.com/timschmidt/hypercurve.git 1a65dd24341875937bdea08a067264a0ba6aa807
-        checkout_repo hyperlattice https://github.com/timschmidt/hyperlattice.git c46f29ae8621d403f0ba755e97d8e4ac2360e3d2
-        checkout_repo hyperlimit https://github.com/timschmidt/liminal.git 4ad5fdb67da4d45bc8431b256300d4ac1ec1721a
-        checkout_repo hypermesh https://github.com/timschmidt/hypermesh.git 8c7fd8c97cfd6e3347a4751fa43e6658dc22ff63
-        checkout_repo hyperphysics https://github.com/timschmidt/hyperphysics.git 27f5ddcb7b9be88b4d616426297801a8cb66b550
-        checkout_repo hyperreal https://github.com/timschmidt/hyperreal.git 77039e613ab855f3d5cc8346ef03ef11d25c6404
-        checkout_repo hypersdf https://github.com/timschmidt/hypersdf.git 48b2235389d46095e5e8cb19ee38f8fd4dee44f6
-        checkout_repo hypersolve https://github.com/timschmidt/hypersolve.git 22fb082060395d54a1e853d757470f9ab03ae775
+        checkout_repo csgrs https://github.com/timschmidt/csgrs.git 1a7328973dabdfa342ea9281cbc456ab64d7d1fb
+        checkout_repo hypercurve https://github.com/timschmidt/hypercurve.git 0d7435cb2edcbb1de9f7234639bd572d0f5f3734
+        checkout_repo hyperlattice https://github.com/timschmidt/hyperlattice.git 95f92205b9439e7922f958de37c90a8664d2d497
+        checkout_repo hyperlimit https://github.com/timschmidt/liminal.git 67a49a53a2935a6d2e8df42055803113277d75d7
+        checkout_repo hypermesh https://github.com/timschmidt/hypermesh.git a7ad180c4cf6992865fb261dda7d29d1494e1dae
+        checkout_repo hyperphysics https://github.com/timschmidt/hyperphysics.git a1d698d73521e3c1bcf3f545530a9c2b9af46666
+        checkout_repo hyperreal https://github.com/timschmidt/hyperreal.git 712d72faa78b06cb2611cd7321af48b0f65ec80f
+        checkout_repo hypersdf https://github.com/timschmidt/hypersdf.git af5f939cc4841434d113c9d29ef797ed87694e4f
+        checkout_repo hypersolve https://github.com/timschmidt/hypersolve.git 00f808f6403a595101680cac12e25bf770249c0c
         checkout_repo hypertri https://github.com/timschmidt/hypertriangulate.git b8d6d85726da6ca3d3da92d585e9d2d29b222bb7
