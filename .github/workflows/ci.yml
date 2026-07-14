@@ -63,3 +63,37 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --locked -- -D warnings
+
+  web:
+    name: Web demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/hyper-workspace
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm32-unknown-unknown
+
+      - name: Install wasm-bindgen CLI
+        shell: bash
+        run: |
+          WASM_BINDGEN_VERSION="$(awk '
+            $0 == "name = \"wasm-bindgen\"" { found = 1; next }
+            found && $1 == "version" {
+              gsub(/"/, "", $3)
+              print $3
+              exit
+            }
+          ' Cargo.lock)"
+          test -n "${WASM_BINDGEN_VERSION}"
+          cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
+
+      - name: Build web demo
+        run: .github/scripts/build-web.sh

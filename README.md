@@ -71,15 +71,10 @@ SynapsCAD can also be built for the browser and packaged for static hosting:
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.122 --locked
-cargo build --release --target wasm32-unknown-unknown
-mkdir -p dist/pkg
-wasm-bindgen --target web --out-dir dist/pkg --out-name synaps_cad target/wasm32-unknown-unknown/release/synaps-cad.wasm
-cp web/index.html dist/index.html
-touch dist/.nojekyll
+.github/scripts/build-web.sh
 ```
 
-The web build supports the editor, 3D renderer, browser image attachment picking via `rfd`, and AI chat through browser HTTP requests. Direct browser calls depend on provider CORS policy, so some providers may require a CORS-enabled custom endpoint or proxy. API keys entered in the web build are handled in the browser. Native desktop integrations such as persistence, clipboard image access, and model export are disabled in the browser build.
+The build script reports the exact `wasm-bindgen-cli` version required by `Cargo.lock` if it is not already installed. It creates a deployable site in `dist/` and verifies that the HTML, JavaScript, and WebAssembly entry points are present. The web build supports the editor, 3D renderer, browser image attachment picking via `rfd`, and AI chat through browser HTTP requests. Direct browser calls depend on provider CORS policy, so some providers may require a CORS-enabled custom endpoint or proxy. API keys entered in the web build are handled in the browser. Native desktop integrations such as persistence, clipboard image access, and model export are disabled in the browser build.
 
 ### AI Provider Setup
 

@@ -49,22 +49,8 @@ jobs:
           test -n "${WASM_BINDGEN_VERSION}"
           cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked
 
-      - name: Build WASM
-        run: cargo build --locked --release --target wasm32-unknown-unknown
-
-      - name: Generate web bindings
-        run: |
-          mkdir -p dist/pkg
-          wasm-bindgen \
-            --target web \
-            --out-dir dist/pkg \
-            --out-name synaps_cad \
-            target/wasm32-unknown-unknown/release/synaps-cad.wasm
-
-      - name: Copy static files
-        run: |
-          cp web/index.html dist/index.html
-          touch dist/.nojekyll
+      - name: Build web demo
+        run: .github/scripts/build-web.sh
 
       - name: Configure Pages
         uses: actions/configure-pages@v6

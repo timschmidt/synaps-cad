@@ -48,6 +48,7 @@ Code Editor (auto-apply)
 | `src/app_config.rs` | Developer constants (not user-facing)                                                                                       |
 | `benches/compile_default.rs` | Default-scene compiler benchmark with phase timing and optional `dispatch-trace` instrumentation.                 |
 | `web/index.html`    | Static HTML shell for the WASM build                                                                                        |
+| `.github/scripts/build-web.sh` | Builds and validates the complete static web bundle using the `wasm-bindgen` version in `Cargo.lock`             |
 | `.github/workflows/pages.yml` | Builds the WASM target, runs `wasm-bindgen`, and deploys the static bundle to GitHub Pages                       |
 
 ## Labels (`@N`)
@@ -169,12 +170,10 @@ The browser build uses `wasm32-unknown-unknown` with target-specific Cargo confi
 
 ```sh
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.112 --locked
-cargo build --release --target wasm32-unknown-unknown
-wasm-bindgen --target web --out-dir dist/pkg --out-name synaps_cad target/wasm32-unknown-unknown/release/synaps-cad.wasm
-cp web/index.html dist/index.html
-touch dist/.nojekyll
+.github/scripts/build-web.sh
 ```
+
+The script reports the exact `wasm-bindgen-cli` version required by `Cargo.lock` when it is missing or mismatched. Both pull-request CI and the Pages deployment run this same script so they validate identical bundles.
 
 The WASM build supports browser file picking for image attachments via `rfd::AsyncFileDialog` and `FileHandle::read()`. AI chat also runs in WASM using browser `reqwest` requests on `wasm_bindgen_futures::spawn_local`; it reuses the same chat receive, code-apply, verification, and error-recovery systems as native, but returns each browser response as one completed message instead of a streaming `genai` response. Direct provider calls are subject to browser CORS policy, so CORS-enabled custom endpoints or proxies may be required. Native integrations still disabled in WASM include persistence (`dirs`/filesystem session storage), clipboard image access, model export, and opening external issue URLs. Compilation runs synchronously on the main thread in WASM because standard native threads are unavailable.
 
