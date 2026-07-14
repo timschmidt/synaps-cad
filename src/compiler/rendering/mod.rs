@@ -10,9 +10,9 @@ const VIEW_SIZE: u32 = 256;
 const BG_COLOR: [u8; 3] = [50, 50, 60];
 
 struct ProjectedTri {
-    verts: [(f32, f32, f32); 3], // (screen_x, screen_y, depth)
+    verts: [(f32, f32, f32); 3],
     normal: [f32; 3],
-    color: [f32; 3], // RGB base color for this triangle
+    color: [f32; 3],
 }
 
 /// Default palette for parts without explicit color (matches `PART_PALETTE` in compilation.rs).
@@ -32,6 +32,7 @@ const VIEW_PART_PALETTE: &[[f32; 3]] = &[
 ];
 
 #[must_use]
+/// Renders the standard orthographic and isometric previews for `parts`.
 pub fn render_orthographic_views(parts: &[MeshData]) -> Vec<ViewImage> {
     render_orthographic_views_sized(parts, VIEW_SIZE)
 }
@@ -40,11 +41,10 @@ pub fn render_orthographic_views(parts: &[MeshData]) -> Vec<ViewImage> {
 #[must_use]
 #[allow(clippy::cast_possible_truncation)]
 pub fn render_orthographic_views_sized(parts: &[MeshData], size: u32) -> Vec<ViewImage> {
-    // Build per-part buffers with color tracking
     let mut all_pos = Vec::new();
     let mut all_norm = Vec::new();
     let mut all_idx = Vec::new();
-    let mut tri_colors = Vec::new(); // one color per triangle
+    let mut tri_colors = Vec::new();
     for (part_idx, part) in parts.iter().enumerate() {
         let offset = all_pos.len() as u32;
         all_pos.extend_from_slice(&part.positions);
@@ -61,11 +61,12 @@ pub fn render_orthographic_views_sized(parts: &[MeshData], size: u32) -> Vec<Vie
         return Vec::new();
     }
 
+    // Each tuple maps model axes to screen X, screen Y, and depth.
     let views = [
-        ("Front", [0, 1, 2], [1.0_f32, 1.0, 1.0]), // X→right, Y→up, Z=depth
-        ("Right", [2, 1, 0], [-1.0_f32, 1.0, 1.0]), // -Z→right, Y→up, X=depth
-        ("Top", [0, 2, 1], [1.0_f32, -1.0, 1.0]),  // X→right, -Z→up, Y=depth
-        ("Bottom", [0, 2, 1], [1.0_f32, 1.0, -1.0]), // X→right, Z→up, -Y=depth
+        ("Front", [0, 1, 2], [1.0_f32, 1.0, 1.0]),
+        ("Right", [2, 1, 0], [-1.0_f32, 1.0, 1.0]),
+        ("Top", [0, 2, 1], [1.0_f32, -1.0, 1.0]),
+        ("Bottom", [0, 2, 1], [1.0_f32, 1.0, -1.0]),
     ];
 
     let mut result: Vec<ViewImage> = views
@@ -87,7 +88,6 @@ pub fn render_orthographic_views_sized(parts: &[MeshData], size: u32) -> Vec<Vie
         })
         .collect();
 
-    // Add isometric view (rotated projection)
     let iso_png = render_iso_view(&all_pos, &all_norm, &all_idx, &tri_colors, size);
     result.push(ViewImage {
         label: "Iso".to_string(),
@@ -115,7 +115,7 @@ fn render_iso_view(
     let size = view_size as usize;
     let margin = 0.1;
 
-    // Isometric rotation: rotate 45° around Y, then ~35.264° around X
+    // Rotate 45° around Y and then arctan(1/sqrt(2)) around X.
     let cos_y = std::f32::consts::FRAC_1_SQRT_2;
     let sin_y = std::f32::consts::FRAC_1_SQRT_2;
     let angle_x: f32 = 35.264_f32.to_radians();
@@ -181,7 +181,6 @@ fn render_iso_view(
         });
     }
 
-    // Rasterize with depth buffer
     let mut pixels = vec![BG_COLOR; size * size];
     let mut depth_buf = vec![f32::NEG_INFINITY; size * size];
 
@@ -259,9 +258,8 @@ fn render_single_view(
     view_size: u32,
 ) -> String {
     let size = view_size as usize;
-    let margin = 0.1; // 10% margin on each side
+    let margin = 0.1;
 
-    // Project vertices
     let projected: Vec<(f32, f32, f32)> = positions
         .iter()
         .map(|p| {
@@ -273,7 +271,6 @@ fn render_single_view(
         })
         .collect();
 
-    // Bounding box of screen coords
     let (mut sx_min, mut sx_max) = (f32::INFINITY, f32::NEG_INFINITY);
     let (mut sy_min, mut sy_max) = (f32::INFINITY, f32::NEG_INFINITY);
     for &(sx, sy, _) in &projected {
@@ -286,18 +283,17 @@ fn render_single_view(
     let range_x = sx_max - sx_min;
     let range_y = sy_max - sy_min;
     if range_x < 1e-6 || range_y < 1e-6 {
-        // Degenerate — return empty
         return String::new();
     }
 
-    // Uniform scale to fit with margin, keeping aspect ratio
+    // One scale preserves aspect ratio while fitting both dimensions.
     let usable = 2.0f32.mul_add(-margin, 1.0);
     let scale = (size as f32 * usable) / range_x.max(range_y);
     let cx = f32::midpoint(sx_min, sx_max);
     let cy = f32::midpoint(sy_min, sy_max);
     let half = size as f32 / 2.0;
 
-    // Map to pixel coords (Y flipped: screen Y goes down)
+    // Image-space Y increases downward.
     let to_pixel = |sx: f32, sy: f32| -> (f32, f32) {
         (
             (sx - cx).mul_add(scale, half),
@@ -305,14 +301,12 @@ fn render_single_view(
         )
     };
 
-    // Build projected triangles with face normals and colors
     let mut tris: Vec<ProjectedTri> = Vec::with_capacity(indices.len() / 3);
     for (tri_idx, tri) in indices.chunks(3).enumerate() {
         let (i0, i1, i2) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
         let v0 = projected[i0];
         let v1 = projected[i1];
         let v2 = projected[i2];
-        // Average normal for flat shading
         let n = [
             (normals[i0][0] + normals[i1][0] + normals[i2][0]) / 3.0,
             (normals[i0][1] + normals[i1][1] + normals[i2][1]) / 3.0,
@@ -326,11 +320,10 @@ fn render_single_view(
         });
     }
 
-    // Rasterize with depth buffer
     let mut pixels = vec![BG_COLOR; size * size];
     let mut depth_buf = vec![f32::NEG_INFINITY; size * size];
 
-    // Light direction (towards camera + slight offset)
+    // A slight offset from the camera direction reveals surface curvature.
     let light_dir = normalize([0.3, 0.5, 1.0]);
 
     for tri in &tris {
@@ -338,7 +331,6 @@ fn render_single_view(
         let p1 = to_pixel(tri.verts[1].0, tri.verts[1].1);
         let p2 = to_pixel(tri.verts[2].0, tri.verts[2].1);
 
-        // Bounding box in pixels
         let min_px = (p0.0.min(p1.0).min(p2.0).floor() as i32).max(0);
         let max_px = (p0.0.max(p1.0).max(p2.0).ceil() as i32).min(size as i32 - 1);
         let min_py = (p0.1.min(p1.1).min(p2.1).floor() as i32).max(0);
@@ -356,9 +348,8 @@ fn render_single_view(
                     let idx = py as usize * size + px as usize;
                     if depth > depth_buf[idx] {
                         depth_buf[idx] = depth;
-                        // Diffuse shading with part color
                         let ndotl = dot(tri.normal, light_dir).abs();
-                        let shade = 0.8f32.mul_add(ndotl, 0.2); // ambient + diffuse
+                        let shade = 0.8f32.mul_add(ndotl, 0.2);
                         let r = (tri.color[0] * 255.0 * shade).clamp(0.0, 255.0) as u8;
                         let g = (tri.color[1] * 255.0 * shade).clamp(0.0, 255.0) as u8;
                         let b = (tri.color[2] * 255.0 * shade).clamp(0.0, 255.0) as u8;
@@ -369,7 +360,6 @@ fn render_single_view(
         }
     }
 
-    // Encode to PNG
     let mut img_buf = image::RgbImage::new(view_size, view_size);
     for (i, px) in pixels.iter().enumerate() {
         let x = (i % size) as u32;

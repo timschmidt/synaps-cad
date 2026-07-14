@@ -9,7 +9,7 @@ pub fn setup_egui_theme(mut contexts: EguiContexts) {
 
     let mut visuals = egui::Visuals::dark();
 
-    // Panel & window backgrounds
+    // Panel and window colors.
     let bg = egui::Color32::from_rgb(24, 24, 36);
     let panel_bg = egui::Color32::from_rgb(30, 30, 46);
     let widget_bg = egui::Color32::from_rgb(40, 40, 58);
@@ -23,7 +23,7 @@ pub fn setup_egui_theme(mut contexts: EguiContexts) {
     visuals.extreme_bg_color = bg;
     visuals.faint_bg_color = widget_bg;
 
-    // Widget styling
+    // Widget states.
     let rounding = egui::CornerRadius::same(6);
     let small_rounding = egui::CornerRadius::same(4);
 
@@ -53,29 +53,26 @@ pub fn setup_egui_theme(mut contexts: EguiContexts) {
     visuals.window_corner_radius = egui::CornerRadius::same(8);
     visuals.window_stroke = egui::Stroke::new(1.0_f32, separator);
 
-    // Separator
     visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, separator);
 
     visuals.interact_cursor = Some(egui::CursorIcon::PointingHand);
 
     ctx.set_visuals(visuals);
 
-    // Spacing and performance optimizations
+    // Layout and interaction timing.
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
     style.spacing.button_padding = egui::vec2(10.0, 4.0);
     style.spacing.window_margin = egui::Margin::same(12);
 
-    // Reduce tessellation complexity for better performance
-    style.visuals.clip_rect_margin = 3.0; // Reduce clipping margin
-    style.animation_time = 0.1; // Reduce animation time to reduce redraws
+    style.visuals.clip_rect_margin = 3.0;
+    style.animation_time = 0.1;
     style.explanation_tooltips = false; // Disable tooltips to reduce hover redraws
 
     ctx.set_style(style);
 
-    // Set tessellation options for better performance
     ctx.tessellation_options_mut(|options| {
-        options.feathering_size_in_pixels = 1.0; // Reduce feathering for better performance
+        options.feathering_size_in_pixels = 1.0;
         options.round_text_to_pixels = true; // Align text to pixels for better caching
     });
 }

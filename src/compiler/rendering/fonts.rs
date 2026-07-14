@@ -11,21 +11,19 @@ const LIBERATION_SANS_ITALIC: &[u8] =
 const LIBERATION_SANS_BOLD_ITALIC: &[u8] =
     include_bytes!("../../../assets/fonts/LiberationSans-BoldItalic.ttf");
 
-/// Resolve font data from a font name parameter.
-/// Tries system fonts first, falls back to bundled Liberation Sans.
+/// Resolves a requested system font, falling back to bundled Liberation Sans.
 #[must_use]
 pub fn resolve_font_data(font_param: Option<&str>) -> Vec<u8> {
     let Some(font_str) = font_param else {
         return LIBERATION_SANS_REGULAR.to_vec();
     };
 
-    // Parse "FontName:style=Bold" format
+    // OpenSCAD encodes style in `Family:style=Variant` form.
     let (family, style) = font_str.find(":style=").map_or_else(
         || (font_str, String::new()),
         |idx| (&font_str[..idx], font_str[idx + 7..].to_lowercase()),
     );
 
-    // Check for bundled Liberation Sans variants
     let family_lower = family.to_lowercase();
     if family_lower == "liberation sans" || family_lower.is_empty() {
         return match style.as_str() {
@@ -36,12 +34,10 @@ pub fn resolve_font_data(font_param: Option<&str>) -> Vec<u8> {
         };
     }
 
-    // Try to load from system font directories
     if let Some(data) = find_system_font(family, &style) {
         return data;
     }
 
-    // Fallback to bundled Liberation Sans
     match style.as_str() {
         "bold" => LIBERATION_SANS_BOLD.to_vec(),
         "italic" => LIBERATION_SANS_ITALIC.to_vec(),
@@ -58,13 +54,12 @@ fn find_system_font(family: &str, style: &str) -> Option<Vec<u8>> {
     } else if cfg!(target_os = "windows") {
         &["C:\\Windows\\Fonts"]
     } else {
-        // Linux / FreeBSD
+        // Common Linux and FreeBSD font locations.
         &["/usr/share/fonts", "/usr/local/share/fonts"]
     };
 
     let family_lower = family.to_lowercase().replace(' ', "");
 
-    // Build expected filename patterns
     let style_suffix = match style {
         "bold" => "-Bold",
         "italic" => "-Italic",
@@ -123,13 +118,12 @@ fn search_font_dir(
     None
 }
 
-/// Apply halign/valign offsets to a text sketch by computing its bounding box.
+/// Applies `OpenSCAD` horizontal and vertical alignment to a text profile.
 fn to_real(value: f64) -> Real {
     Real::try_from(value).ok().unwrap_or_else(Real::zero)
 }
 
 pub fn apply_text_alignment(sketch: Profile, halign: &str, valign: &str) -> Profile {
-    // Compute bounding box by triangulating and scanning vertices
     let tris = sketch.triangulate();
     if tris.is_empty() {
         return sketch;
@@ -156,14 +150,14 @@ pub fn apply_text_alignment(sketch: Profile, halign: &str, valign: &str) -> Prof
     let dx = match halign {
         "center" => -(min_x + width / 2.0),
         "right" => -max_x,
-        _ => 0.0, // "left" — default
+        _ => 0.0,
     };
 
     let dy = match valign {
         "center" => -(min_y + height / 2.0),
         "top" => -max_y,
         "bottom" => -min_y,
-        _ => 0.0, // "baseline" — default
+        _ => 0.0,
     };
 
     if dx.abs() < 1e-12 && dy.abs() < 1e-12 {
@@ -173,10 +167,7 @@ pub fn apply_text_alignment(sketch: Profile, halign: &str, valign: &str) -> Prof
     }
 }
 
-/// Render text with proper character spacing and direction support.
-///
-/// Works around csgrs's broken space-character advance by rendering
-/// character-by-character with advance widths from the font's horizontal metrics.
+/// Renders text per glyph so spacing and direction use the font's metrics.
 pub fn render_text_with_direction(
     text: &str,
     font_data: &[u8],
@@ -184,9 +175,8 @@ pub fn render_text_with_direction(
     spacing: f64,
     direction: &str,
 ) -> Profile {
-    // Normalize direction: OpenSCAD accepts "ltr", "rtl", "ttb", "btt"
-    // OpenSCAD uses HarfBuzz which matches direction by first character:
-    // 'r' → RTL, 't' → TTB, 'b' → BTT, anything else → LTR
+    // OpenSCAD accepts ltr, rtl, ttb, and btt and dispatches on the first
+    // character, matching HarfBuzz direction parsing.
     let dir = match direction.chars().next() {
         Some('r' | 'R') => "rtl",
         Some('t' | 'T') => "ttb",
@@ -199,39 +189,26 @@ pub fn render_text_with_direction(
     };
 
     let upem = f64::from(face.units_per_em());
-    // OpenSCAD uses FreeType with FT_Set_Char_Size(face, 0, size*64, 100, 100).
-    // This gives a scale of (size * 100/72) / upem from font units to output units.
-    // csgrs internally scales glyphs by (input_size * 0.3527777 / 2048).
-    // We solve: corrected_size * 0.3527777 / 2048 = size * (100/72) / upem
-    // → corrected_size = size * 100 / (72 * 0.3527777)  [when upem=2048]
+    // Match OpenSCAD's 100-DPI FreeType sizing against csgrs's point-to-mm
+    // scale. The correction is exact for the common 2048-unit em square.
     let corrected_size = size * 100.0 / (72.0 * 0.352_777_7);
     let font_scale = size * 100.0 / (72.0 * upem);
 
-    // For vertical layout, use OS/2 Typo metrics if available (matches OpenSCAD/Qt tight spacing).
-    // Fallback to hhea ascender/descender (usually larger).
+    // OS/2 typographic metrics most closely match OpenSCAD/Qt vertical layout;
+    // hhea metrics provide the portable fallback.
     let (ascender, descender) = face.tables().os2.map_or_else(
         || (face.ascender(), face.descender()),
         |os2| (os2.typographic_ascender(), os2.typographic_descender()),
     );
     let ascender = f64::from(ascender) * font_scale;
     let descender = f64::from(descender) * font_scale;
-    // Ignore line_gap and do NOT apply spacing to horizontal advance.
+    // OpenSCAD applies `spacing` to vertical line height, not glyph advance.
     let line_height = (ascender - descender) * spacing;
 
     let is_vertical = dir == "ttb" || dir == "btt";
 
-    // OpenSCAD direction semantics (verified against OpenSCAD STL output):
-    //
-    // LTR: chars left-to-right starting at x=0 (default).
-    // RTL: string is REVERSED, then rendered left-to-right from x=0.
-    //      "Right to left" → displays as "tfel ot thgiR" starting at x=0.
-    // TTB: chars top-to-bottom, text extends DOWNWARD from y≈0.
-    //      First char at top, ascent line at y=0.
-    // BTT: same as TTB but with REVERSED char order.
-    //      Last char at top, first char at bottom. Read bottom-to-top.
-    //
-    // For RTL and BTT, we reverse the character array so layout is always
-    // LTR (horizontal) or TTB (vertical).
+    // OpenSCAD reverses rtl and btt character order before applying its ltr or
+    // top-to-bottom placement rule.
     let chars: Vec<char> = if dir == "rtl" || dir == "btt" {
         text.chars().rev().collect()
     } else {
@@ -246,13 +223,12 @@ pub fn render_text_with_direction(
             continue;
         }
 
-        // Get advance width for this character from the font
         let advance = face.glyph_index(*ch).map_or(size * 0.25, |gid| {
             face.glyph_hor_advance(gid)
                 .map_or(size * 0.25, |a| f64::from(a) * font_scale)
         });
 
-        // Only render non-space characters (those with an outline)
+        // Spaces advance the cursor without producing an outline.
         let has_outline = face
             .glyph_index(*ch)
             .and_then(|gid| {
@@ -275,16 +251,14 @@ pub fn render_text_with_direction(
         if has_outline {
             let glyph = Profile::text(&ch.to_string(), font_data, to_real(corrected_size));
             let positioned = if is_vertical {
-                // TTB/BTT: top-to-bottom layout. Text extends downward from y≈0.
-                // Shift baseline down by ascender so the ascent line is at y=0.
-                // Center character horizontally.
+                // Vertical text extends down from the ascent line and centers
+                // each glyph on the text axis.
                 glyph.translate(
                     to_real(-advance / 2.0),
                     to_real(-(cursor + ascender)),
                     Real::zero(),
                 )
             } else {
-                // LTR (and RTL after reversal): left-to-right from x=0.
                 glyph.translate(to_real(cursor), Real::zero(), Real::zero())
             };
 
@@ -294,7 +268,6 @@ pub fn render_text_with_direction(
             });
         }
 
-        // Advance cursor
         if is_vertical {
             cursor += line_height;
         } else {

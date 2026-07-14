@@ -79,10 +79,9 @@ fn export_stl(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
     let mut file =
         std::fs::File::create(path).map_err(|e| format!("Failed to create file: {e}"))?;
 
-    // Count total triangles
     let total_triangles: u32 = parts.iter().map(|p| (p.indices.len() / 3) as u32).sum();
 
-    // 80-byte header
+    // Binary STL begins with an arbitrary 80-byte header and triangle count.
     let mut header = [0u8; 80];
     let label = b"SynapsCAD STL Export";
     header[..label.len()].copy_from_slice(label);
@@ -99,7 +98,6 @@ fn export_stl(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
                 part.positions[tri[2] as usize],
                 part.positions[tri[1] as usize],
             );
-            // Compute face normal
             let u = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
             let v = [v2[0] - v0[0], v2[1] - v0[1], v2[2] - v0[2]];
             let n = [
@@ -114,19 +112,16 @@ fn export_stl(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
                 [0.0, 0.0, 1.0]
             };
 
-            // Normal (3 × f32)
             for &c in &normal {
                 file.write_all(&c.to_le_bytes())
                     .map_err(|e| e.to_string())?;
             }
-            // Vertices (3 × 3 × f32)
             for vtx in [v0, v1, v2] {
                 for c in vtx {
                     file.write_all(&c.to_le_bytes())
                         .map_err(|e| e.to_string())?;
                 }
             }
-            // Attribute byte count
             file.write_all(&0u16.to_le_bytes())
                 .map_err(|e| e.to_string())?;
         }
@@ -149,14 +144,13 @@ fn export_obj(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
     writeln!(obj, "mtllib {mtl_filename}").map_err(|e| e.to_string())?;
     writeln!(mtl, "# SynapsCAD MTL Export").map_err(|e| e.to_string())?;
 
-    let mut vertex_offset = 1usize; // OBJ indices are 1-based
+    let mut vertex_offset = 1usize;
     let mut normal_global_offset = 0usize;
 
     for (i, part) in parts.iter().enumerate() {
         let mat_name = format!("part_{}", i + 1);
         let color = part.color.unwrap_or([0.7, 0.7, 0.7]);
 
-        // Write material
         writeln!(mtl, "newmtl {mat_name}").map_err(|e| e.to_string())?;
         writeln!(mtl, "Kd {} {} {}", color[0], color[1], color[2]).map_err(|e| e.to_string())?;
         writeln!(mtl, "Ka 0.1 0.1 0.1").map_err(|e| e.to_string())?;
@@ -164,18 +158,15 @@ fn export_obj(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
         writeln!(mtl, "Ns 100.0").map_err(|e| e.to_string())?;
         writeln!(mtl, "d 1.0").map_err(|e| e.to_string())?;
 
-        // Write object group
         writeln!(obj, "o part_{}", i + 1).map_err(|e| e.to_string())?;
         writeln!(obj, "usemtl {mat_name}").map_err(|e| e.to_string())?;
 
         let (welded_pos, welded_idx) = weld_vertices(&part.positions, &part.indices);
 
-        // Write vertices
         for pos in &welded_pos {
             writeln!(obj, "v {} {} {}", pos[0], pos[1], pos[2]).map_err(|e| e.to_string())?;
         }
 
-        // Write per-face normals
         for tri in welded_idx.chunks(3) {
             let verts = [
                 welded_pos[tri[0] as usize],
@@ -209,7 +200,7 @@ fn export_obj(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
         }
 
-        // Write faces (swap v1/v2 for CCW winding)
+        // OBJ indices are one-based; swap the last two vertices for CCW winding.
         let normal_offset = normal_global_offset;
         for (fi, tri) in welded_idx.chunks(3).enumerate() {
             let (a, b, c) = (
@@ -237,7 +228,7 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
     let mut model = Model::new();
     let color_group_id = 1usize;
 
-    // Collect unique colors and build a ColorGroup
+    // Deduplicate colors into one 3MF ColorGroup.
     let mut colors: Vec<(u8, u8, u8, u8)> = Vec::new();
     let mut part_color_indices: Vec<Option<usize>> = Vec::new();
 
@@ -262,7 +253,6 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
         }
     }
 
-    // Add color group if we have any colors
     let has_colors = !colors.is_empty();
     if has_colors {
         model.required_extensions.push(lib3mf::Extension::Material);
@@ -274,8 +264,7 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
         model.resources.color_groups.push(cg);
     }
 
-    // Each part becomes a sub-object; a single assembly object references
-    // them via <components> so slicers treat them as one model.
+    // Each part is a sub-object so it can retain an independent color.
     let first_part_id = if has_colors { 2 } else { 1 };
     for (i, part) in parts.iter().enumerate() {
         let object_id = first_part_id + i;
@@ -292,14 +281,12 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
         }
 
         for tri_indices in welded_idx.chunks(3) {
-            // Swap v2 and v3 to produce CCW winding (outward normals)
-            // required by the 3MF spec; internal mesh uses CW order.
+            // The 3MF specification requires CCW winding; internal meshes use CW.
             let mut tri = Triangle::new(
                 tri_indices[0] as usize,
                 tri_indices[2] as usize,
                 tri_indices[1] as usize,
             );
-            // Assign color to triangle
             if let Some(Some(color_idx)) = part_color_indices.get(i) {
                 tri.pid = Some(color_group_id);
                 tri.pindex = Some(*color_idx);
@@ -313,8 +300,7 @@ fn export_3mf(parts: &[StlMeshData], path: &Path) -> Result<(), String> {
         model.resources.objects.push(object);
     }
 
-    // If multiple parts, create an assembly object that groups them as
-    // components so slicers see a single model instead of separate objects.
+    // An assembly makes multiple colored sub-objects one slicer-visible model.
     if parts.len() > 1 {
         let assembly_id = first_part_id + parts.len();
         let mut assembly = Object::new(assembly_id);

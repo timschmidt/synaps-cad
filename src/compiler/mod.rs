@@ -15,12 +15,12 @@ pub use evaluator::Evaluator;
 pub use rendering::render_orthographic_views;
 pub use types::{CompilationResult, MeshData, ViewImage};
 
-/// The scene loaded by a fresh `SynapsCAD` workspace.
+/// `OpenSCAD` scene loaded by a fresh `SynapsCAD` workspace.
 pub const DEFAULT_SCAD_CODE: &str = r#"// Welcome to SynapsCAD!
-// Switch $view to render different models
+// Switch $view to render a different model.
 $view = "all";
 
-// --- Snowman ---
+// Snowman
 module view_snowman() {
     color("white") sphere(r = 12);
     color("white") translate([0, 0, 16]) sphere(r = 9);
@@ -31,7 +31,7 @@ module view_snowman() {
                 cylinder(h = 8, r1 = 1.5, r2 = 0);
 }
 
-// --- Rocket ---
+// Rocket
 module view_rocket() {
     color("silver") cylinder(h = 40, r = 8);
     color("red")
@@ -44,7 +44,7 @@ module view_rocket() {
                     cube([8, 2, 12]);
 }
 
-// --- Castle ---
+// Castle
 module view_castle() {
     color("sandybrown") difference() {
         cube([40, 40, 20], center = true);
@@ -59,7 +59,7 @@ module view_castle() {
                 }
 }
 
-// --- Exact Hyperreal Geometry ---
+// Exact Hyperreal geometry
 module view_exact() {
     // Repeating rational dimensions are retained exactly rather than rounded.
     color("deepskyblue")
@@ -70,7 +70,7 @@ module view_exact() {
             sphere(r = exact("pi"));
 }
 
-// --- All Together ---
+// Combined scene
 module view_all() {
     view_snowman();
     translate([50, 0, 0]) view_rocket();
@@ -78,7 +78,7 @@ module view_all() {
     translate([60, 60, 0]) view_exact();
 }
 
-// --- View selector ---
+// View selector
 if ($view == "snowman") view_snowman();
 if ($view == "rocket") view_rocket();
 if ($view == "castle") view_castle();
@@ -123,16 +123,26 @@ pub fn compile_scad_code(
             geometry::Shape::Mesh3D(mesh) => {
                 match geometry::conversions::csg_mesh_to_mesh_data(&mesh) {
                     Ok(m) => m,
-                    Err(_) => continue,
+                    Err(error) => {
+                        evaluator
+                            .warnings
+                            .push(format!("Mesh conversion failed: {error}"));
+                        continue;
+                    }
                 }
             }
             geometry::Shape::Sketch2D(sketch) => {
-                // 2D shapes that weren't extruded are rendered as thin 3D meshes
+                // Preview bare 2D shapes as thin solids.
                 match geometry::conversions::csg_mesh_to_mesh_data(
                     &sketch.extrude(to_real(0.01), ()),
                 ) {
                     Ok(m) => m,
-                    Err(_) => continue,
+                    Err(error) => {
+                        evaluator
+                            .warnings
+                            .push(format!("2D preview conversion failed: {error}"));
+                        continue;
+                    }
                 }
             }
             geometry::Shape::Failed(e) => {
@@ -153,10 +163,13 @@ pub fn compile_scad_code(
     }
 }
 
-/// Lightweight compilation that only produces orthographic views (skips full mesh generation if possible).
+/// Compiles `code` and returns only its rendered orthographic views.
 ///
 /// # Errors
-/// Returns an error string if compilation fails.
+///
+/// Returns an error string when parsing fails or compilation is canceled.
+/// Recoverable evaluation and mesh warnings remain available only through
+/// [`compile_scad_code`].
 pub fn compile_views_only(code: &str) -> Result<Vec<ViewImage>, String> {
     match compile_scad_code(code, 0, None) {
         CompilationResult::Success { views, .. } => Ok(views),

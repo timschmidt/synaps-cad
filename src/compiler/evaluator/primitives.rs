@@ -26,10 +26,6 @@ fn point_from_real(point: &[Real; 3]) -> Point3 {
 }
 
 impl Evaluator {
-    // =======================================================================
-    // 3D Primitives
-    // =======================================================================
-
     #[allow(clippy::unused_self)]
     pub fn eval_cube(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
         let size_val = Self::get_arg(args, "size", 0).unwrap_or(&Value::Number(1.0));
@@ -78,7 +74,7 @@ impl Evaluator {
             .or_else(|| Self::get_arg_real(args, "height", 0))
             .unwrap_or_else(Real::one);
 
-        // Handle d/d1/d2 (diameter) as well as r/r1/r2
+        // Diameter arguments take precedence over their radius equivalents.
         let half = |d: Real| (d / 2.0).ok();
         let r1 = Self::get_arg_real(args, "r1", 99)
             .or_else(|| Self::get_arg_real(args, "d1", 99).and_then(half))
@@ -90,12 +86,11 @@ impl Evaluator {
             .unwrap_or_else(|| r1.clone());
 
         let center = Self::get_arg_bool(args, "center", 99, false);
-        // Use max radius to determine segments
+        // Tessellation follows the larger endpoint radius.
         let max_radius = r1.max(&r2).to_f64_lossy();
         let slices = self.resolve_fn_with_radius(args, max_radius);
 
-        // For cones (r1 != r2): use CsgMesh::frustum which correctly
-        // handles zero-radius (emits triangles, not degenerate quads).
+        // `frustum` handles zero-radius cone tips without degenerate quads.
         let m = if r1 == r2 {
             CsgMesh::cylinder(r1, h, slices, ())
         } else {
@@ -140,7 +135,6 @@ impl Evaluator {
             })
             .collect();
 
-        // Deduplicate faces
         let faces = {
             let mut seen = std::collections::HashSet::new();
             let mut deduped = Vec::with_capacity(faces.len());
@@ -148,7 +142,7 @@ impl Evaluator {
                 if face.is_empty() {
                     continue;
                 }
-                // Rotate so the minimum index comes first (canonical form)
+                // Canonical rotation makes cyclically equivalent faces equal.
                 let min_pos = face
                     .iter()
                     .enumerate()
@@ -173,7 +167,6 @@ impl Evaluator {
             if pts.len() < 3 {
                 continue;
             }
-            // Compute face normal
             let approximate = |point: &[Real; 3]| {
                 NalgebraVector3::new(
                     point[0].to_f64_lossy().unwrap_or(0.0),
@@ -194,7 +187,7 @@ impl Evaluator {
                     .collect();
                 polygons.push(Polygon::new(verts, ()));
             } else {
-                // Fan-triangulate N-gons (N>3)
+                // Fan-triangulate faces with more than three vertices.
                 let p0 = point_from_real(pts[0]);
                 for i in 1..pts.len() - 1 {
                     let p1 = point_from_real(pts[i]);
@@ -214,10 +207,6 @@ impl Evaluator {
         }
         Some(Shape::from_csg_mesh(CsgMesh::from_polygons(polygons)))
     }
-
-    // =======================================================================
-    // 2D Primitives
-    // =======================================================================
 
     #[must_use]
     pub fn eval_circle(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
@@ -274,7 +263,8 @@ impl Evaluator {
 
     #[must_use]
     pub fn eval_text(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
-        // text(t, size, font, halign, valign, spacing, direction, language, script, $fn)
+        // OpenSCAD signature: text, size, font, halign, valign, spacing,
+        // direction, language, script, and $fn.
         let text_str = match Self::get_arg(args, "text", 0) {
             Some(Value::String(s)) => s.clone(),
             Some(Value::Number(n)) => format!("{n}"),
@@ -289,7 +279,7 @@ impl Evaluator {
         let size = Self::get_arg_number(args, "size", 1).unwrap_or(10.0);
         let spacing_val = Self::get_arg_number(args, "spacing", 5).unwrap_or(1.0);
 
-        // Resolve font data: try system font, fall back to bundled Liberation Sans
+        // Prefer the requested system font, then bundled Liberation Sans.
         let font_param = match Self::get_arg(args, "font", 2) {
             Some(Value::String(s)) => Some(s.clone()),
             _ => None,
@@ -304,7 +294,6 @@ impl Evaluator {
         let sketch =
             render_text_with_direction(&text_str, &font_data, size, spacing_val, &direction);
 
-        // Apply horizontal alignment (default "left" = no offset)
         let halign = match Self::get_arg(args, "halign", 3) {
             Some(Value::String(s)) => s.clone(),
             _ => "left".to_string(),

@@ -181,7 +181,7 @@ fn parse_hex_color(s: &str) -> Option<[f32; 3]> {
             ])
         }
         8 => {
-            // #RRGGBBAA — ignore alpha
+            // OpenSCAD geometry colors ignore the `#RRGGBBAA` alpha component.
             let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
             let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
             let b = u8::from_str_radix(&hex[4..6], 16).ok()?;

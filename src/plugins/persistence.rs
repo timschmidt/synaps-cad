@@ -132,8 +132,16 @@ fn load_session_system(
     let Some(path) = session_path() else {
         return;
     };
-    let Ok(data) = std::fs::read_to_string(&path) else {
-        return;
+    let data = match std::fs::read_to_string(&path) {
+        Ok(data) => data,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+        Err(error) => {
+            eprintln!(
+                "[SynapsCAD] Failed to read session file {}: {error}",
+                path.display()
+            );
+            return;
+        }
     };
     let Ok(saved) = serde_json::from_str::<PersistentData>(&data) else {
         eprintln!("[SynapsCAD] Failed to parse session file, starting fresh");
@@ -145,7 +153,6 @@ fn load_session_system(
     ai_config.temperature = saved.temperature;
     ai_config.max_verification_rounds = saved.max_verification_rounds;
 
-    // Trim API keys when loading from storage
     ai_config.api_keys = saved
         .api_keys
         .into_iter()
@@ -154,7 +161,7 @@ fn load_session_system(
 
     ai_config.model_per_provider = saved.model_per_provider;
 
-    // Migrate legacy ollama_host into custom_urls
+    // Migrate the legacy `ollama_host` field into `custom_urls`.
     let mut custom_urls = saved.custom_urls;
     if !saved.ollama_host.is_empty() && !custom_urls.contains_key("Ollama") {
         let mut host = saved.ollama_host;
@@ -163,7 +170,7 @@ fn load_session_system(
         }
         custom_urls.insert("Ollama".into(), host);
     }
-    // Normalize all custom URLs (trim, trailing slash, default adapter path on host-only URLs).
+    // Normalize whitespace, trailing slashes, and default paths on host-only URLs.
     for (adapter, url) in &mut custom_urls {
         *url = normalize_custom_url(adapter, url);
     }
@@ -192,7 +199,7 @@ fn load_session_system(
         })
         .collect();
 
-    // Rebuild input history from restored user messages (exclude auto-generated ones)
+    // Rebuild input history from restored, user-authored messages.
     chat_state.input_history = chat_state
         .messages
         .iter()
@@ -200,10 +207,10 @@ fn load_session_system(
         .map(|m| (m.content.clone(), m.images.clone()))
         .collect();
 
-    // Mark restored messages as previous session — they won't be sent to the AI
+    // Restored messages remain visible but are not sent to the AI.
     chat_state.session_start = chat_state.messages.len();
 
-    // Backward compat: if old multi-part data exists, merge into single buffer
+    // Merge legacy multipart documents into the current single editor buffer.
     if !saved.parts.is_empty() {
         let mut merged = String::new();
         for (name, code) in &saved.parts {

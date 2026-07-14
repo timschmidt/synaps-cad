@@ -20,20 +20,32 @@ mod tests;
 /// Stored user-defined module.
 #[derive(Clone)]
 pub struct UserModule {
+    /// Parameter names and optional default expressions in declaration order.
     pub params: Vec<(String, Option<Expr>)>,
+    /// Statements evaluated when the module is instantiated.
     pub body: Vec<Statement>,
 }
 
 /// Stored user-defined function.
 #[derive(Clone)]
 pub struct UserFunction {
+    /// Parameter names and optional default expressions in declaration order.
     pub params: Vec<(String, Option<Expr>)>,
+    /// Expression evaluated when the function is called.
     pub body_expr: Expr,
 }
 
+/// Stateful evaluator for one `OpenSCAD` source file.
+///
+/// The evaluator resolves expressions, user definitions, geometry modules,
+/// colors, and exact-number extensions into [`Shape`] values. Construct a
+/// fresh evaluator per independent compilation.
 pub struct Evaluator {
+    /// Current lexical variable bindings, including `OpenSCAD` special variables.
     pub variables: HashMap<String, Value>,
+    /// User-defined modules visible in the current source file.
     pub modules: HashMap<String, UserModule>,
+    /// User-defined functions visible in the current source file.
     pub functions: HashMap<String, UserFunction>,
     /// Stack of call-site children for `children()` calls inside user modules.
     pub children_stack: Vec<Vec<Statement>>,
@@ -55,6 +67,7 @@ impl Default for Evaluator {
 }
 
 impl Evaluator {
+    /// Creates an evaluator with `OpenSCAD`'s default tessellation variables.
     #[must_use]
     pub fn new() -> Self {
         let mut variables = HashMap::new();
@@ -76,7 +89,7 @@ impl Evaluator {
         }
     }
 
-    /// Check if compilation has been canceled.
+    /// Returns whether the optional cancellation flag has been raised.
     #[must_use]
     pub fn is_canceled(&self) -> bool {
         self.cancel
@@ -84,9 +97,7 @@ impl Evaluator {
             .is_some_and(|c| c.load(Ordering::Relaxed))
     }
 
-    /// Resolve `$fn` from either explicit args or global variable.
-    /// Uses `OpenSCAD` logic: if `$fn` > 0, use it.
-    /// Otherwise, use `$fa` (min angle) and `$fs` (min size) based on radius `r`.
+    /// Resolves `$fn`, falling back to `$fa` and `$fs` as `OpenSCAD` does.
     #[must_use]
     pub fn resolve_fn(&self, args: &[(Option<String>, Value)]) -> usize {
         self.resolve_fn_with_radius(args, None)
@@ -122,7 +133,7 @@ impl Evaluator {
             .and_then(Value::as_number)
             .unwrap_or(2.0);
 
-        // Limit fa to a reasonable minimum to prevent infinite segments
+        // Bound both controls away from zero to keep tessellation finite.
         let fa = fa.max(0.01);
         let fs = fs.max(0.01);
 
@@ -142,15 +153,10 @@ impl Evaluator {
         f64::ceil(fragments.max(5.0)) as usize
     }
 
-    // =======================================================================
-    // Package & Statement evaluation
-    // =======================================================================
-
     pub fn eval_source_file(&mut self, source_file: &SourceFile) -> Vec<(Shape, Option<[f32; 3]>)> {
-        // First pass: register ALL module and function definitions in the file
+        // Register definitions before geometry so forward references work.
         self.register_definitions(&source_file.statements);
 
-        // Second pass: evaluate geometry with color tracking
         let mut shapes = Vec::new();
         for stmt in &source_file.statements {
             if self.is_canceled() {
@@ -212,7 +218,7 @@ impl Evaluator {
                 children,
                 ..
             } => {
-                // Handle for/let/color as special module instantiations
+                // These modules alter evaluation scope rather than geometry.
                 match name.as_str() {
                     "for" | "intersection_for" => {
                         shapes.extend(self.eval_for_from_instantiation(args, children));
@@ -244,8 +250,8 @@ impl Evaluator {
                         self.eval_transform_into(children, &eval_args, kind, shapes);
                     }
                     _ => {
-                        // Check for user-defined module — evaluate body directly
-                        // to preserve per-shape colors
+                        // Evaluate user modules directly to preserve per-shape
+                        // colors across their bodies.
                         if let Some(user_mod) = self.modules.get(name).cloned() {
                             let eval_args = self.eval_arguments(args);
                             self.eval_user_module_into(&user_mod, &eval_args, children, shapes);
@@ -284,7 +290,7 @@ impl Evaluator {
         args: &[Argument],
         children: &[Statement],
     ) -> Vec<(Shape, Option<[f32; 3]>)> {
-        // Collect loop variable assignments: for(i=[0:10], j=[0:5])
+        // A `for` may bind multiple variables, each with its own iterable.
         let loop_vars: Vec<(String, Value)> = args
             .iter()
             .filter_map(|arg| {
@@ -320,7 +326,6 @@ impl Evaluator {
             results.extend(self.eval_for_nested(loop_vars, depth + 1, children));
         }
 
-        // Restore variable
         match saved {
             Some(v) => {
                 self.variables.insert(name.clone(), v);
@@ -434,7 +439,6 @@ impl Evaluator {
             Value::Number(call_site_children.len() as f64),
         );
 
-        // Bind parameters
         let mut pos_idx = 0;
         for (param_name, default_expr) in &user_mod.params {
             let named = Self::get_named_arg(args, param_name).cloned();
@@ -551,24 +555,24 @@ impl Evaluator {
         let args = self.eval_arguments(raw_args);
 
         match name {
-            // --- 3D primitives ---
+            // 3D primitives.
             "cube" => self.eval_cube(&args),
             "sphere" => self.eval_sphere(&args),
             "cylinder" => self.eval_cylinder(&args),
             "polyhedron" => self.eval_polyhedron(&args),
 
-            // --- 2D primitives ---
+            // 2D primitives.
             "circle" => self.eval_circle(&args),
             "square" => self.eval_square(&args),
             "polygon" => self.eval_polygon(&args),
             "text" => self.eval_text(&args),
 
-            // --- Boolean operations ---
+            // Boolean operations.
             "union" => self.eval_boolean_op(children, BoolOp::Union),
             "difference" => self.eval_boolean_op(children, BoolOp::Difference),
             "intersection" => self.eval_boolean_op(children, BoolOp::Intersection),
 
-            // --- Transformations ---
+            // Transformations.
             "translate" => self.eval_transform(children, &args, TransformKind::Translate),
             "rotate" => self.eval_transform(children, &args, TransformKind::Rotate),
             "scale" => self.eval_transform(children, &args, TransformKind::Scale),
@@ -583,11 +587,11 @@ impl Evaluator {
                 self.eval_passthrough_children(children)
             }
 
-            // --- Extrusions ---
+            // Extrusions.
             "linear_extrude" => self.eval_linear_extrude(children, &args),
             "rotate_extrude" => self.eval_rotate_extrude(children, &args),
 
-            // --- Other ---
+            // Other modules.
             "hull" => self.eval_hull(children),
             "minkowski" => {
                 let child_shapes = self.eval_children(children);

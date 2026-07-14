@@ -234,15 +234,13 @@ pub fn draw_part_labels(
             continue;
         };
 
-        // Hide labels that would overlap with the top toolbar or the left panel
+        // Keep part labels inside the unobstructed viewport.
         let label_pos = egui::pos2(screen_pos.x + occupied.left, screen_pos.y);
 
-        // Check overlap with left panel (redundant if using occupied.left as offset, but good for safety if logic changes)
         if label_pos.x < occupied.left {
             continue;
         }
 
-        // Check overlap with top toolbar area
         if label_pos.y < 50.0 {
             continue;
         }

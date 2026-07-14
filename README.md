@@ -1,221 +1,164 @@
 # SynapsCAD
 
-<br>
-
 <p align="center">
-  <img src="assets/splash@2x.png" alt="SynapsCAD" width="260" />
+  <img src="assets/splash@2x.png" alt="SynapsCAD" width="260">
 </p>
 
 <p align="center">
-  The AI-powered 3D CAD IDE — edit code, visualize in 3D, and reshape your designs with natural language.
+  OpenSCAD editing, exact CSG, interactive visualization, and AI-assisted modeling in one Rust application.
 </p>
 
 <p align="center">
-  Vibe Code your 3D models!
+  <a href="https://timschmidt.github.io/synaps-cad"><strong>Launch the web demo</strong></a>
+  ·
+  <a href="https://github.com/timschmidt/synaps-cad/releases"><strong>Download a release</strong></a>
 </p>
 
-<p align="center">
-  <a href="https://timschmidt.github.io/synaps-cad"><strong>Launch SynapsCAD in your browser</strong></a>
-</p>
-
-<br>
-
-> ⚠️ **Early Prototype** — Not all OpenSCAD code will compile correctly yet. Start with simple models and expect rough edges. Bug reports with code snippets that cause issues are very welcome!
-
-## See SynapsCAD in Action
+> SynapsCAD is an early prototype. OpenSCAD compatibility is incomplete; concise bug reports with a reproducing source file are welcome.
 
 <p align="center">
   <a href="assets/Screenshot-2026-02-28.png">
-    <img src="assets/Screenshot-2026-02-28.png" alt="SynapsCAD Screenshot" width="100%" />
+    <img src="assets/Screenshot-2026-02-28.png" alt="SynapsCAD editor and 3D viewport" width="100%">
   </a>
 </p>
 
 <p align="center">
-  <a href="assets/2026-03-01_slideshow.webp">
-      <em>▶ See it in action</em>
-  </a>
+  <a href="assets/2026-03-01_slideshow.webp"><em>View the animated demonstration</em></a>
 </p>
 
-## Overview
+SynapsCAD parses and evaluates OpenSCAD source without invoking the OpenSCAD executable. It presents the result in a Bevy viewport, exports STL, OBJ, or 3MF, and can ask local or hosted language models to revise the current design. The compiler is also available as a Rust library.
 
-A desktop 3D CAD application that combines an OpenSCAD code editor, a real-time 3D viewport, and an AI assistant. Write OpenSCAD code, compile it to 3D models, visualize them interactively, and use AI to modify your designs through natural language — including context from 3D click interactions.
+## Quick start
 
-## Download
-
-Pre-built binaries for Linux, macOS (Apple Silicon & Intel), and Windows are available on the [Releases](https://github.com/ierror/synaps-cad/releases) page.
-
-> **macOS users:** Since SynapsCAD is not signed with an Apple Developer certificate, macOS will block the app on first launch. To fix this, run:
->
-> ```sh
-> sudo xattr -rd com.apple.quarantine /path/to/SynapsCAD.app
-> ```
->
-> We don't pay for an Apple Developer account at this point — if you prefer, you can always [build from source](#building-from-source) instead.
-
-## Building from Source
-
-### Prerequisites
-
-- **Rust** (stable toolchain)
-- An AI provider API key (e.g. `ANTHROPIC_API_KEY`) for the chat assistant
-
-### Quick Start
+Install a stable Rust toolchain, clone this repository beside the Hyper dependencies named in `Cargo.toml`, and run:
 
 ```sh
-cargo run
+cargo run --locked
 ```
 
-### Web Build
+The editor is on the left and the viewport is on the right. Edit the source, select **Compile**, then orbit with middle- or right-mouse drag, pan with Shift+middle-mouse drag, and zoom with the wheel. Number keys `1` through `7` select standard views; `G` toggles gizmos, `L` toggles labels, and `?` opens the shortcut guide.
 
-SynapsCAD can also be built for the browser and packaged for static hosting:
+Prebuilt Linux, macOS, and Windows artifacts are published on the [Releases](https://github.com/timschmidt/synaps-cad/releases) page. Unsigned macOS builds may need their quarantine attribute removed after the user has verified the download:
+
+```sh
+xattr -rd com.apple.quarantine /path/to/SynapsCAD.app
+```
+
+## Using the compiler crate
+
+`compile_scad_code` is the high-level entry point. It accepts source text, an optional global `$fn` override, and an optional atomic cancellation flag:
+
+```rust
+use synaps_cad::compiler::{CompilationResult, compile_scad_code};
+
+match compile_scad_code("color(\"gold\") sphere(r = exact(\"5/3\"));", 32, None) {
+    CompilationResult::Success { parts, views, warnings } => {
+        println!("{} meshes, {} previews", parts.len(), views.len());
+        for warning in warnings {
+            eprintln!("warning: {warning}");
+        }
+    }
+    CompilationResult::Error(error) => eprintln!("compile error: {error}"),
+    CompilationResult::Canceled => eprintln!("compilation canceled"),
+}
+```
+
+The principal API types and functions are:
+
+- `CompilationResult`, which distinguishes success, failure, and cancellation.
+- `MeshData`, an indexed triangle mesh in Bevy's Y-up coordinate system, and `ViewImage`, a labeled base64-encoded PNG preview.
+- `compile_views_only`, a convenience wrapper for callers that need previews but not meshes or recoverable warnings.
+- `Evaluator` and `Value`, the lower-level OpenSCAD evaluator and its ordinary or exact runtime values.
+- `render_orthographic_views`, which renders previews from existing `MeshData` values.
+- `DEFAULT_SCAD_CODE`, the scene loaded by a new application workspace.
+
+The crate is not yet published, so downstream users should currently use a Git or path dependency. The binary and library share the same compilation pipeline.
+
+Build the local API documentation with `cargo doc --no-deps --open`.
+
+## Exact numbers
+
+SynapsCAD extends OpenSCAD expressions with `exact()`. Pass a string to construct a rational or symbolic Hyperreal without first rounding through `f64`:
+
+```openscad
+third = exact("1/3");
+
+translate([cos(exact("60")), sin(exact("30")), exact("pi")])
+    cube([third, exact("2/5"), exact("3/7")]);
+```
+
+Strings may contain integers, decimals, fractions, or the symbolic constants `"pi"`, `"tau"`, and `"e"`. Arithmetic, degree-based trigonometry, vectors, primitive dimensions, polygons, polyhedra, affine transformations, offsets, and extrusion parameters preserve exact values through the `csgrs` pipeline. Passing an ordinary numeric expression to `exact()` preserves its already-parsed binary value; use a string when the source's decimal or rational meaning must remain exact.
+
+## Architecture
+
+| Layer | Main API | Responsibility |
+| --- | --- | --- |
+| Parsing | `openscad_rs::parse` | OpenSCAD source to a typed syntax tree |
+| Evaluation | `Evaluator`, `Value`, `Shape` | Expressions, modules, primitives, transformations, and CSG |
+| Geometry | `csgrs` and the Hyper stack | Exact profiles, meshes, booleans, offsets, and tessellation |
+| Compilation | `compile_scad_code` | Mesh conversion, diagnostics, and orthographic previews |
+| Application | Bevy 0.15 and `bevy_egui` | Editor, viewport, picking, camera, persistence, and export |
+| AI | `genai` or browser HTTP | Model discovery, streaming edits, and verification rounds |
+
+Bevy owns the main thread. Native compilation and AI work run in background tasks and communicate with nonblocking channels; WebAssembly uses browser-local tasks. The web target omits native persistence, clipboard-image capture, and model export.
+
+## AI providers
+
+Ollama works locally without a key. Desktop cloud providers read the following environment variables and can also be configured in **AI Settings**. The browser sends requests directly, so a provider must permit browser CORS or be accessed through an appropriate proxy.
+
+| Provider | Environment variable |
+| --- | --- |
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| Gemini | `GEMINI_API_KEY` |
+| Groq | `GROQ_API_KEY` |
+| DeepSeek | `DEEPSEEK_API_KEY` |
+| Cohere | `COHERE_API_KEY` |
+| Fireworks | `FIREWORKS_API_KEY` |
+| Together | `TOGETHER_API_KEY` |
+| xAI | `XAI_API_KEY` |
+| ZAI | `ZAI_API_KEY` |
+| Ollama | none |
+
+## Web and development builds
+
+The CI-equivalent native checks are:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --locked -- -D warnings
+.github/scripts/test-ci.sh
+cargo build --locked --release
+```
+
+Build the static web application with the exact `wasm-bindgen-cli` version recorded in `Cargo.lock`:
 
 ```sh
 rustup target add wasm32-unknown-unknown
 .github/scripts/build-web.sh
 ```
 
-The build script reports the exact `wasm-bindgen-cli` version required by `Cargo.lock` if it is not already installed. It creates a deployable site in `dist/` and verifies that the HTML, JavaScript, and WebAssembly entry points are present. The web build supports the editor, 3D renderer, browser image attachment picking via `rfd`, and AI chat through browser HTTP requests. Direct browser calls depend on provider CORS policy, so some providers may require a CORS-enabled custom endpoint or proxy. API keys entered in the web build are handled in the browser. Native desktop integrations such as persistence, clipboard image access, and model export are disabled in the browser build.
+The script creates and validates `dist/`. Run the end-to-end compiler benchmark with `cargo bench --bench compile_default`; `SYNAPS_BENCH_SCENE`, `SYNAPS_BENCH_FILE`, `SYNAPS_BENCH_FN_OVERRIDE`, and `SYNAPS_BENCH_ITERATIONS` select its workload.
 
-### AI Provider Setup
+The compatibility corpus under `tests/openscad_examples` originates from OpenSCAD. `tests/generate_references.sh` uses an installed OpenSCAD CLI to regenerate the bounding-box and mesh-count references used by the corpus tests.
 
-On desktop, SynapsCAD uses the [genai](https://crates.io/crates/genai) crate to connect to AI providers — including **local models via [Ollama](https://ollama.com)** for fully offline, private usage (no API key needed). In the browser build, SynapsCAD uses direct HTTP requests for Anthropic, OpenAI-compatible providers, Gemini, Cohere, and Ollama. Set the API key for your chosen cloud provider as an environment variable on desktop:
+## References
 
-| Provider  | Environment Variable |
-| --------- | -------------------- |
-| Anthropic | `ANTHROPIC_API_KEY`  |
-| OpenAI    | `OPENAI_API_KEY`     |
-| Gemini    | `GEMINI_API_KEY`     |
-| Groq      | `GROQ_API_KEY`       |
-| DeepSeek  | `DEEPSEEK_API_KEY`   |
-| Cohere    | `COHERE_API_KEY`     |
-| Fireworks | `FIREWORKS_API_KEY`  |
-| Together  | `TOGETHER_API_KEY`   |
-| xAI       | `XAI_API_KEY`        |
-| ZAI       | `ZAI_API_KEY`        |
-| Ollama    | _(no key needed)_    |
+- [OpenSCAD documentation and language reference](https://openscad.org/documentation.html)
+- [OpenSCAD source and compatibility corpus](https://github.com/openscad/openscad)
+- [`openscad-rs` parser](https://github.com/timschmidt/openscad-rs)
+- [Bevy 0.15 documentation](https://docs.rs/bevy/0.15)
+- [`bevy_egui` documentation](https://docs.rs/bevy_egui/0.33)
+- [egui documentation](https://docs.rs/egui/0.31)
+- [`genai` documentation](https://docs.rs/genai/0.6.0-beta.3)
+- [3MF Core Specification](https://3mf.io/spec/core-v1-3-0/)
+- [STL file format](https://en.wikipedia.org/wiki/STL_(file_format)) and [Wavefront OBJ format](https://www.loc.gov/preservation/digital/formats/fdd/fdd000507.shtml)
+- [WebAssembly Rust target](https://doc.rust-lang.org/rustc/platform-support/wasm32-unknown-unknown.html) and [`wasm-bindgen` guide](https://rustwasm.github.io/docs/wasm-bindgen/)
 
-```sh
-export ANTHROPIC_API_KEY="sk-..."
-cargo run
-```
+## Hyper ecosystem
 
-When an env var is set on desktop, the UI shows it as active. You can also enter or override the key in **⚙ AI Settings** within the app.
+SynapsCAD builds on [`csgrs`](https://github.com/timschmidt/csgrs), [`hyperreal`](https://github.com/timschmidt/hyperreal), [`hypercurve`](https://github.com/timschmidt/hypercurve), [`hypermesh`](https://github.com/timschmidt/hypermesh), [`hypertriangulate`](https://github.com/timschmidt/hypertriangulate), and [`hyperlattice`](https://github.com/timschmidt/hyperlattice). Their READMEs describe the exact-number, curve, topology, triangulation, and spatial-indexing layers in more detail.
 
-This opens a window with a 3D viewport on the right and a side panel on the left containing the code editor and AI chat.
+## License and contact
 
-### Exact Numbers
-
-SynapsCAD extends OpenSCAD expressions with `exact()`. Pass a string to construct a rational or symbolic hyperreal without first rounding through a floating-point value:
-
-```openscad
-third = exact("1/3");
-angle = exact("pi");
-
-translate([cos(exact("60")), sin(exact("30")), 0])
-    cube([third, exact("2/5"), exact("3/7")]);
-```
-
-Rational strings may contain integers, decimals, or fractions. The symbolic strings `"pi"`, `"tau"`, and `"e"` construct the corresponding exact constants. Arithmetic, degree-based trigonometric functions, vectors, primitive dimensions, polygon and polyhedron coordinates, translations, Euler and axis-aligned rotations, scales, mirrors, offsets, and extrusion parameters retain exact values through the csgrs geometry pipeline. Passing an ordinary numeric expression to `exact()` preserves its already-parsed binary value; use a string when its decimal or rational meaning must be exact.
-
-### Basic Workflow
-
-1. Write or edit OpenSCAD code in the editor panel
-2. Click **Compile** — SynapsCAD parses and evaluates the code using scad-rs and renders CSG geometry via csgrs
-3. Ask the AI assistant to modify your model — it sees your current code and part labels, and can update the code automatically
-
-## Architecture Overview
-
-SynapsCAD is a single-binary Rust application built on three main pillars:
-
-### Runtime Stack
-
-| Layer            | Technology                                               | Role                                                               |
-| ---------------- | -------------------------------------------------------- | ------------------------------------------------------------------ |
-| Rendering & ECS  | **Bevy 0.15**                                            | 3D viewport, entity management, frame loop                         |
-| UI               | **bevy_egui** (egui 0.31)                                | Side panel with code editor and chat interface                     |
-| OpenSCAD parsing | [**openscad-rs**](https://github.com/ierror/openscad-rs) | Lossless, resilient OpenSCAD parser                                |
-| CSG rendering    | **csgrs**                                                | Constructive solid geometry — boolean ops, primitives, mesh output |
-| Export           | **lib3mf**                                               | 3MF export with per-part colors; STL and OBJ exported natively     |
-| AI               | **genai** / browser HTTP                                 | Unified desktop client plus WASM-compatible provider calls         |
-| Async            | **Tokio** / browser tasks                                | Background native tasks and `spawn_local` browser requests         |
-
-### Key Design Decisions
-
-- **Bevy owns the main thread.** The Bevy app loop drives rendering and ECS systems. A separate Tokio runtime is stored as a Bevy `Resource` for native async AI tasks; the browser build uses `wasm_bindgen_futures::spawn_local`.
-
-- **`std::sync::mpsc` bridges async to sync.** Background tasks (compilation, AI streaming) send results through channels. Bevy systems poll with non-blocking `try_recv()` each frame, keeping the viewport responsive.
-
-- **Pure-Rust compilation pipeline.** OpenSCAD code is parsed by `scad-syntax`, evaluated by a built-in AST walker, and rendered to triangle meshes via `csgrs` — no external tools or WASM required.
-
-- **Built-in mesh picking.** Bevy 0.15's `MeshPickingPlugin` provides ray-cast picking via the observer pattern — no external picking crate needed.
-
-### System Pipeline
-
-```
-ui_layout_system          — render egui side panel (editor + chat)
-    ↓
-trigger_compilation_system — if code is dirty, spawn compilation in a thread
-    ↓
-poll_compilation_system    — check if compilation finished, load mesh
-    ↓
-ai_send_system             — if chat submitted, spawn AI request on tokio
-    ↓
-ai_receive_system          — poll AI response, update chat + code
-    ↓
-adjust_camera_viewport     — resize 3D viewport to account for side panel
-    ↓
-orbit_camera_system        — process mouse/keyboard input for 3D navigation
-    ↓
-zoom_to_fit_system         — auto-frame model after compilation
-```
-
-## Keyboard Shortcuts
-
-| Action                 | Key |
-| ---------------------- | --- |
-| **Toggle gizmos**      | `G` |
-| **Toggle labels**      | `L` |
-| **Keyboard shortcuts** | `?` |
-
-## 3D Viewport Navigation
-
-SynapsCAD uses **Blender-style** camera controls:
-
-| Action          | Control                                               |
-| --------------- | ----------------------------------------------------- |
-| **Orbit**       | Middle mouse button drag _or_ Right mouse button drag |
-| **Pan**         | Shift + Middle mouse button drag                      |
-| **Zoom**        | Scroll wheel, `+`/`-` keys                            |
-| **Move focus**  | `W`/`A`/`S`/`D` or Arrow keys                         |
-| **Front view**  | `1`                                                   |
-| **Back view**   | `2`                                                   |
-| **Right view**  | `3`                                                   |
-| **Left view**   | `4`                                                   |
-| **Top view**    | `5`                                                   |
-| **Bottom view** | `6`                                                   |
-| **Isometric**   | `7`                                                   |
-
-## Development
-
-### Running
-
-```sh
-cargo run          # launch the app
-cargo clippy       # lint
-```
-
-### Tests
-
-```sh
-cargo test                         # run all tests
-cargo test test_text_              # run tests matching a pattern
-cargo test -- --nocapture          # show println/eprintln output
-```
-
-## Contact
-
-[@boerni@chaos.social](https://chaos.social/@boerni)
-
-## License
-
-GPL v3
+SynapsCAD is licensed under [GPL-3.0-or-later](LICENSE). Contact [@boerni@chaos.social](https://chaos.social/@boerni).

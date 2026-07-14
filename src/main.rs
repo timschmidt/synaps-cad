@@ -21,7 +21,7 @@ fn main() {
     let primary_window = Window {
         title: format!("SynapsCAD v{}", env!("CARGO_PKG_VERSION")),
         resolution: (1600.0_f32, 900.0_f32).into(),
-        // Use VSync to limit frame rate and reduce CPU usage when idle
+        // VSync limits idle CPU and GPU use.
         present_mode: PresentMode::Fifo,
         #[cfg(target_arch = "wasm32")]
         canvas: Some("#synaps-cad".into()),

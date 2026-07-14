@@ -45,10 +45,10 @@ pub fn fix_clipboard_paste_events(
     }
 
     for mut input in &mut egui_inputs {
-        // Remove ALL Event::Text during a paste frame. On Windows, bevy_egui sends
-        // individual per-character Text events that don't match the full clipboard
-        // string, so an exact-match filter fails. Any Text event in a Ctrl+V frame
-        // is an artifact of the key press, not intentional typing.
+        // Remove every `Event::Text` value during a paste frame. On Windows,
+        // bevy_egui emits individual character events that do not match the full
+        // clipboard string, so exact-match filtering is insufficient. Text events
+        // during Ctrl/Cmd+V are paste artifacts rather than intentional typing.
         input
             .events
             .retain(|event| !matches!(event, egui::Event::Text(_)));
@@ -80,7 +80,7 @@ pub fn splash_screen_system(
         return;
     }
 
-    // Keep requesting redraws while splash animation is active
+    // Keep requesting redraws while the splash animation is active.
     redraw.send(RequestRedraw);
 
     if !splash.dismissing
@@ -235,17 +235,14 @@ pub fn performance_monitor_system(
     time: Res<Time>,
     keyboard: Res<ButtonInput<KeyCode>>,
 ) {
-    // Toggle performance overlay with Ctrl+P
     let ctrl = keyboard.pressed(KeyCode::ControlLeft) || keyboard.pressed(KeyCode::ControlRight);
     if ctrl && keyboard.just_pressed(KeyCode::KeyP) {
         perf_monitor.show_overlay = !perf_monitor.show_overlay;
     }
 
-    // Record current frame time
     let frame_time_ms = time.delta_secs() * 1000.0;
     perf_monitor.record_frame_time(frame_time_ms);
 
-    // Show performance overlay if enabled
     if !perf_monitor.show_overlay {
         return;
     }
@@ -267,7 +264,10 @@ pub fn performance_monitor_system(
 
             ui.label(format!("FPS: {current_fps:.1}"));
             ui.label(format!("Frame Time: {avg_frame_time:.2} ms"));
-            ui.label(format!("Est. CPU: {:.1}%", perf_monitor.cpu_usage));
+            ui.label(format!(
+                "60 FPS budget: {:.1}%",
+                perf_monitor.frame_budget_usage()
+            ));
 
             ui.separator();
             ui.label("Frame Time Graph (last 60 frames):");
@@ -290,10 +290,8 @@ pub fn performance_monitor_system(
                 let (response, painter) =
                     ui.allocate_painter(egui::vec2(plot_width, plot_height), egui::Sense::hover());
 
-                // Draw background
                 painter.rect_filled(response.rect, 2.0, egui::Color32::from_gray(30));
 
-                // Draw frame time line
                 if perf_monitor.frame_times.len() > 1 {
                     let points: Vec<egui::Pos2> = perf_monitor
                         .frame_times
@@ -320,7 +318,7 @@ pub fn performance_monitor_system(
                         );
                     }
 
-                    // Draw 16.67ms line (60 FPS target)
+                    // Mark the 16.67 ms budget for 60 FPS.
                     if max_time > 16.67 && min_time < 16.67 {
                         let target_y = ((16.67 - min_time) / (max_time - min_time))
                             .mul_add(-plot_height, response.rect.max.y);
@@ -336,7 +334,6 @@ pub fn performance_monitor_system(
 
                 ui.label(format!("Range: {min_time:.1} - {max_time:.1} ms"));
 
-                // Color code the performance status
                 let status_color = if current_fps < 30.0 {
                     egui::Color32::RED
                 } else if current_fps < 55.0 {

@@ -11,26 +11,17 @@ pub struct OccupiedScreenSpace {
 /// Performance monitoring data for debug display.
 #[derive(Resource)]
 pub struct PerformanceMonitor {
-    /// Frame times for the last N frames (milliseconds)
+    /// Frame times for the last 60 frames, in milliseconds.
     pub frame_times: Vec<f32>,
-    /// CPU usage percentage (estimated)
-    pub cpu_usage: f32,
-    /// Memory usage in MB
-    pub memory_usage: f32,
-    /// Whether to show performance overlay
+    /// Whether to show the performance overlay.
     pub show_overlay: bool,
-    /// Frame count for averaging
-    frame_count: usize,
 }
 
 impl Default for PerformanceMonitor {
     fn default() -> Self {
         Self {
-            frame_times: Vec::with_capacity(60), // Store 1 second at 60 FPS
-            cpu_usage: 0.0,
-            memory_usage: 0.0,
+            frame_times: Vec::with_capacity(60),
             show_overlay: false,
-            frame_count: 0,
         }
     }
 }
@@ -41,32 +32,6 @@ impl PerformanceMonitor {
         if self.frame_times.len() > 60 {
             self.frame_times.remove(0);
         }
-        self.frame_count += 1;
-
-        // Update system stats every 60 frames (~1 second)
-        if self.frame_count >= 60 {
-            self.update_system_stats();
-            self.frame_count = 0;
-        }
-    }
-
-    #[allow(clippy::cast_precision_loss)]
-    fn update_system_stats(&mut self) {
-        // Note: Cross-platform CPU usage monitoring would require additional dependencies
-        // For now, we'll estimate based on frame times as a proxy
-        let avg_frame_time = if self.frame_times.is_empty() {
-            16.67 // 60 FPS target
-        } else {
-            self.frame_times.iter().sum::<f32>() / self.frame_times.len() as f32
-        };
-
-        // Rough estimation: high frame times suggest high CPU usage
-        // This is a simplified metric for debugging purposes
-        self.cpu_usage = (avg_frame_time / 16.67 * 100.0).min(100.0);
-
-        // Memory usage would also need platform-specific implementation
-        // For debugging, we'll track allocation pressure indirectly
-        self.memory_usage = 0.0; // Placeholder
     }
 
     #[allow(clippy::cast_precision_loss)]
@@ -86,6 +51,11 @@ impl PerformanceMonitor {
             0.0
         }
     }
+
+    /// Returns average frame time as a percentage of a 60 FPS frame budget.
+    pub fn frame_budget_usage(&self) -> f32 {
+        self.average_frame_time() / (1000.0 / 60.0) * 100.0
+    }
 }
 
 /// Async file-picker result receiver (avoids blocking the main thread).
@@ -102,7 +72,7 @@ pub struct PickedImage {
 /// State for image hover preview in chat.
 #[derive(Resource, Default)]
 pub struct ImagePreviewState {
-    /// (`base64_data` key, decoded texture handle)
+    /// Active attachment ID and its decoded texture.
     pub(crate) active: Option<(String, egui::TextureHandle)>,
 }
 

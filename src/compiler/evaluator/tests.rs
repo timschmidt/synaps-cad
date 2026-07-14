@@ -854,7 +854,8 @@ fn assert_example_matches_reference_loose(relative: &str) {
     let Ok(ref_json) = std::fs::read_to_string(&ref_path) else {
         return;
     };
-    // Very loose tolerance (200%) for things like text or complex boolean ops
+    // This coarse compatibility gate accommodates intentionally different
+    // tessellation strategies for text and complex CSG.
     assert_example_matches_reference_data(relative, &parts, &ref_json, 2.0);
 }
 
@@ -1112,7 +1113,8 @@ fn assert_example_matches_reference_very_loose(relative: &str) {
     let Ok(ref_json) = std::fs::read_to_string(&ref_path) else {
         return;
     };
-    // Extremely loose tolerance (500%) for tests with huge facet count discrepancies (e.g. text or high-res booleans)
+    // These parametric fixtures currently serve as coarse bounds and facet-count
+    // guards while their tessellation differs substantially from OpenSCAD's.
     assert_example_matches_reference_data(relative, &parts, &ref_json, 5.0);
 }
 

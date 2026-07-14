@@ -439,7 +439,7 @@ impl Evaluator {
                     Value::Undef
                 }
             },
-            // Trigonometric (OpenSCAD uses degrees)
+            // Trigonometric functions use degrees, following OpenSCAD.
             "sin" if matches!(args.first(), Some(Value::Exact(_))) => args
                 .first()
                 .and_then(Value::as_real)
@@ -509,7 +509,7 @@ impl Evaluator {
                 }
             }
 
-            // Math
+            // Mathematical functions.
             "abs" if matches!(args.first(), Some(Value::Exact(_))) => args
                 .first()
                 .and_then(Value::as_real)
@@ -590,7 +590,7 @@ impl Evaluator {
                 }
             }
 
-            // Rounding
+            // Rounding functions.
             "round" if matches!(args.first(), Some(Value::Exact(_))) => args
                 .first()
                 .and_then(Value::as_real)
@@ -619,7 +619,7 @@ impl Evaluator {
                 .and_then(Value::as_number)
                 .map_or(Value::Undef, |n| Value::Number(n.floor())),
 
-            // Min/max
+            // Extrema.
             "min" if args.iter().any(|v| matches!(v, Value::Exact(_))) => args
                 .iter()
                 .filter_map(Value::as_real)
@@ -641,7 +641,7 @@ impl Evaluator {
                 .reduce(f64::max)
                 .map_or(Value::Undef, Value::Number),
 
-            // List/string operations
+            // List and string operations.
             "len" => match args.first() {
                 Some(Value::List(l)) => Value::Number(l.len() as f64),
                 Some(Value::String(s)) => Value::Number(s.len() as f64),
@@ -658,7 +658,7 @@ impl Evaluator {
                 Value::List(result)
             }
 
-            // Vector operations
+            // Vector operations.
             "norm" => {
                 if let Some(Value::List(l)) = args.first() {
                     if l.iter().any(|v| matches!(v, Value::Exact(_))) {
@@ -710,7 +710,7 @@ impl Evaluator {
                 }
             }
 
-            // Type checking
+            // Type predicates.
             "is_undef" => Value::Bool(matches!(args.first(), Some(Value::Undef) | None)),
             "is_list" => Value::Bool(matches!(args.first(), Some(Value::List(_)))),
             "is_num" => Value::Bool(matches!(
@@ -720,7 +720,7 @@ impl Evaluator {
             "is_string" => Value::Bool(matches!(args.first(), Some(Value::String(_)))),
             "is_bool" => Value::Bool(matches!(args.first(), Some(Value::Bool(_)))),
 
-            // String operations
+            // String operations.
             "str" => {
                 let s: String = args
                     .iter()
@@ -753,7 +753,7 @@ impl Evaluator {
                 }
             }
 
-            // Random
+            // Random-number functions.
             "rands" => {
                 if args.len() >= 3 {
                     match (
@@ -783,7 +783,7 @@ impl Evaluator {
                 }
             }
 
-            // Lookup
+            // Table lookup.
             "lookup" => {
                 if args.len() >= 2 {
                     if let (Some(key), Some(Value::List(table))) =

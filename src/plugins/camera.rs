@@ -75,7 +75,7 @@ fn orbit_camera_system(
     windows: Query<&Window>,
     mut contexts: EguiContexts,
 ) {
-    // Don't process camera input if egui wants the pointer
+    // Camera input is gated by egui focus and the unobstructed viewport.
     let Some(egui_ctx) = contexts.try_ctx_mut() else {
         return;
     };
@@ -88,7 +88,6 @@ fn orbit_camera_system(
         return;
     };
 
-    // Check if cursor is over the 3D viewport (not the side panel)
     let cursor_in_viewport = if let Some(pos) = window.cursor_position() {
         pos.x > occupied.left
     } else {
@@ -97,7 +96,7 @@ fn orbit_camera_system(
 
     let can_interact = cursor_in_viewport && !egui_wants_pointer;
 
-    // --- Scroll to zoom ---
+    // Scroll zoom.
     for ev in scroll_events.read() {
         if !can_interact {
             continue;
@@ -110,11 +109,11 @@ fn orbit_camera_system(
         orbit.radius = orbit.radius.clamp(0.1, 5000.0);
     }
 
-    // --- Middle mouse button: orbit / pan ---
+    // Mouse orbit and pan.
     let mmb = mouse_button.pressed(MouseButton::Middle);
     let shift = keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight);
 
-    // Also support right mouse button for orbit (common alternative)
+    // Right-drag is a common alternative to middle-drag orbiting.
     let rmb = mouse_button.pressed(MouseButton::Right);
 
     if (mmb || rmb) && can_interact {
@@ -124,14 +123,12 @@ fn orbit_camera_system(
         }
 
         if shift && (mmb || rmb) {
-            // Pan
             let sensitivity = orbit.radius * 0.002;
             let right = transform.rotation * Vec3::X;
             let up = transform.rotation * Vec3::Y;
             orbit.focus -= right * delta.x * sensitivity;
             orbit.focus += up * delta.y * sensitivity;
         } else {
-            // Orbit
             let sensitivity = 0.005;
             orbit.yaw = delta.x.mul_add(-sensitivity, orbit.yaw);
             orbit.pitch = delta.y.mul_add(-sensitivity, orbit.pitch);
@@ -141,11 +138,11 @@ fn orbit_camera_system(
             );
         }
     } else {
-        // Drain unread motion events
+        // Drain unread motion so stale deltas cannot move the next active frame.
         mouse_motion.read().for_each(|_| {});
     }
 
-    // --- Keyboard controls (skip if egui has keyboard focus, e.g. code editor) ---
+    // Keyboard navigation is disabled while an egui control has focus.
     if !egui_ctx.wants_keyboard_input() {
         let speed = orbit.radius * 0.02;
         if keyboard.pressed(KeyCode::KeyW) || keyboard.pressed(KeyCode::ArrowUp) {
@@ -164,59 +161,59 @@ fn orbit_camera_system(
             let right = transform.rotation * Vec3::X;
             orbit.focus += right * speed;
         }
-        // Numpad/key zoom
+        // Numpad and main-keyboard zoom.
         if keyboard.pressed(KeyCode::Equal) || keyboard.pressed(KeyCode::NumpadAdd) {
             orbit.radius = (orbit.radius * 0.97).max(0.1);
         }
         if keyboard.pressed(KeyCode::Minus) || keyboard.pressed(KeyCode::NumpadSubtract) {
             orbit.radius = (orbit.radius * 1.03).min(5000.0);
         }
-        // Numpad views (also regular digit keys for keyboards without numpad)
-        // Front: looking along -Z
+        // Fixed views accept numpad or main-keyboard digits.
+        // Front: look along -Z.
         if keyboard.just_pressed(KeyCode::Numpad1) || keyboard.just_pressed(KeyCode::Digit1) {
             orbit.yaw = 0.0;
             orbit.pitch = 0.0;
             orbit.zoom_to_fit = true;
         }
-        // Back: looking along +Z
+        // Back: look along +Z.
         if keyboard.just_pressed(KeyCode::Numpad2) || keyboard.just_pressed(KeyCode::Digit2) {
             orbit.yaw = std::f32::consts::PI;
             orbit.pitch = 0.0;
             orbit.zoom_to_fit = true;
         }
-        // Right: looking along -X
+        // Right: look along -X.
         if keyboard.just_pressed(KeyCode::Numpad3) || keyboard.just_pressed(KeyCode::Digit3) {
             orbit.yaw = std::f32::consts::FRAC_PI_2;
             orbit.pitch = 0.0;
             orbit.zoom_to_fit = true;
         }
-        // Left: looking along +X
+        // Left: look along +X.
         if keyboard.just_pressed(KeyCode::Numpad4) || keyboard.just_pressed(KeyCode::Digit4) {
             orbit.yaw = -std::f32::consts::FRAC_PI_2;
             orbit.pitch = 0.0;
             orbit.zoom_to_fit = true;
         }
-        // Top: looking down from above (+Y)
+        // Top: look down from +Y.
         if keyboard.just_pressed(KeyCode::Numpad5) || keyboard.just_pressed(KeyCode::Digit5) {
             orbit.yaw = 0.0;
             orbit.pitch = std::f32::consts::FRAC_PI_2 - 0.01;
             orbit.zoom_to_fit = true;
         }
-        // Bottom: looking up from below (-Y)
+        // Bottom: look up from -Y.
         if keyboard.just_pressed(KeyCode::Numpad6) || keyboard.just_pressed(KeyCode::Digit6) {
             orbit.yaw = 0.0;
             orbit.pitch = -(std::f32::consts::FRAC_PI_2 - 0.01);
             orbit.zoom_to_fit = true;
         }
-        // Isometric: default 45° view
+        // Isometric: restore the default 45° view.
         if keyboard.just_pressed(KeyCode::Numpad7) || keyboard.just_pressed(KeyCode::Digit7) {
             orbit.yaw = std::f32::consts::FRAC_PI_4;
             orbit.pitch = std::f32::consts::FRAC_PI_4;
             orbit.zoom_to_fit = true;
         }
-    } // end keyboard guard
+    }
 
-    // --- Apply orbit transform ---
+    // Apply the accumulated orbit state once per frame.
     let rot = Quat::from_euler(EulerRot::YXZ, orbit.yaw, -orbit.pitch, 0.0);
     let offset = rot * Vec3::new(0.0, 0.0, orbit.radius);
     transform.translation = orbit.focus + offset;
@@ -233,7 +230,7 @@ fn zoom_to_fit_system(
         return;
     }
 
-    // Compute combined bounding box over ALL parts
+    // Frame the combined world-space bounds of all parts.
     let mut bb_min = Vec3::splat(f32::INFINITY);
     let mut bb_max = Vec3::splat(f32::NEG_INFINITY);
     let mut found = false;
@@ -245,7 +242,7 @@ fn zoom_to_fit_system(
         let Some(aabb) = mesh.compute_aabb() else {
             continue;
         };
-        // Transform AABB corners to world space
+        // Transform all AABB corners because parts may be rotated.
         let local_min = Vec3::from(aabb.center) - Vec3::from(aabb.half_extents);
         let local_max = Vec3::from(aabb.center) + Vec3::from(aabb.half_extents);
         for corner in [
@@ -276,7 +273,7 @@ fn zoom_to_fit_system(
     let max_extent = half_extents.max_element();
 
     orbit.focus = center;
-    // Place camera far enough to see the full object (FOV ≈ 45°)
+    // Place the camera far enough to contain the object at the 45° FOV.
     orbit.radius = (max_extent * 2.5).max(2.0);
 }
 
@@ -304,7 +301,7 @@ fn adjust_camera_viewport(
 
     let vp_width = (width - left_pixels).max(1.0) as u32;
     let vp_x = (left_pixels as u32).min(window.physical_width().saturating_sub(1));
-    // Clamp so viewport never exceeds render target
+    // Clamp the viewport to the render target after rounding to physical pixels.
     let vp_width = vp_width.min(window.physical_width().saturating_sub(vp_x));
     let vp_height = (height as u32).max(1);
 
@@ -325,14 +322,14 @@ fn toggle_gizmos_system(
     mut contexts: EguiContexts,
     grid_size: Res<CurrentGridSize>,
 ) {
-    // When the grid was rebuilt, sync visibility on new entities
+    // A rebuilt grid inherits the current visibility state.
     if grid_size.is_changed() && !gizmo_vis.visible {
         for mut v in &mut gizmos {
             *v = Visibility::Hidden;
         }
     }
 
-    // Don't toggle if egui wants keyboard input (e.g. typing in text field)
+    // Do not consume shortcuts while an egui control has keyboard focus.
     let Some(egui_ctx) = contexts.try_ctx_mut() else {
         return;
     };
@@ -369,7 +366,6 @@ fn ruler_click_system(
     mut contexts: EguiContexts,
     occupied: Res<OccupiedScreenSpace>,
 ) {
-    // Escape cancels ruler mode
     if keyboard.just_pressed(KeyCode::Escape) && ruler.active {
         ruler.active = false;
         ruler.point_a = None;
@@ -381,7 +377,7 @@ fn ruler_click_system(
         return;
     }
 
-    // Don't raycast if egui is using the pointer (toolbar click, etc.)
+    // Toolbar and panel clicks must not start measurements.
     let Some(egui_ctx) = contexts.try_ctx_mut() else {
         return;
     };
@@ -399,7 +395,7 @@ fn ruler_click_system(
         return;
     };
 
-    // Convert window cursor to viewport-local coordinates
+    // Ray construction expects coordinates local to the unobstructed viewport.
     let viewport_cursor = Vec2::new(cursor_pos.x - occupied.left, cursor_pos.y);
     if viewport_cursor.x < 0.0 {
         return;
@@ -414,11 +410,10 @@ fn ruler_click_system(
 
     if let Some((_entity, hit)) = hits.first() {
         if ruler.point_a.is_none() || ruler.point_b.is_some() {
-            // Start new measurement (or restart after completed)
+            // Start a measurement or replace the completed one.
             ruler.point_a = Some(hit.point);
             ruler.point_b = None;
         } else {
-            // Complete measurement
             ruler.point_b = Some(hit.point);
         }
     }
@@ -437,7 +432,6 @@ fn ruler_gizmo_system(
 
     let Some(a) = ruler.point_a else { return };
 
-    // Draw point A marker
     gizmos.sphere(
         Isometry3d::from_translation(a),
         0.5,
@@ -446,7 +440,6 @@ fn ruler_gizmo_system(
 
     let Some(b) = ruler.point_b else { return };
 
-    // Draw point B marker and line
     gizmos.sphere(
         Isometry3d::from_translation(b),
         0.5,
@@ -454,7 +447,6 @@ fn ruler_gizmo_system(
     );
     gizmos.line(a, b, Color::srgb(1.0, 1.0, 0.3));
 
-    // Draw distance label as egui overlay at midpoint
     let midpoint = (a + b) * 0.5;
     let distance = a.distance(b);
     let Ok((camera, camera_transform)) = camera_q.get_single() else {

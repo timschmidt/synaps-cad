@@ -34,7 +34,7 @@ impl Evaluator {
         for stmt in children {
             self.eval_statement(stmt, shapes);
         }
-        // Apply the transform to every newly-added shape
+        // Only shapes emitted by these children receive the transform.
         let new_shapes: Vec<_> = shapes.drain(before..).collect();
         for (s, color) in new_shapes {
             shapes.push((Self::apply_transform(s, &kind, args), color));
@@ -178,13 +178,11 @@ impl Evaluator {
             .filter(|value| value.is_finite() && *value >= 1.0)
             .map_or_else(|| self.resolve_fn(args), |value| value.round() as usize);
 
-        // Collect 2D children
         let child_shapes = self.eval_children(children);
         if child_shapes.is_empty() {
             return None;
         }
 
-        // Merge all children into a single sketch (if possible)
         let sketch = self.shapes_to_sketch(&child_shapes)?;
 
         let mesh = if twist != Real::zero() || scale != [Real::one(), Real::one()] {

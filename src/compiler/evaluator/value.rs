@@ -1,17 +1,26 @@
 use csgrs::Real;
 
+/// Runtime value produced by the `OpenSCAD` expression evaluator.
 #[derive(Debug, Clone)]
 pub enum Value {
+    /// Ordinary binary floating-point number.
     Number(f64),
+    /// Exact rational or symbolic Hyper number.
     Exact(Real),
+    /// Boolean value.
     Bool(bool),
+    /// `OpenSCAD` vector or list.
     List(Vec<Self>),
+    /// UTF-8 string.
     String(String),
-    Range(f64, f64, f64), // from, to, step
+    /// Inclusive `(start, end, step)` numeric range.
+    Range(f64, f64, f64),
+    /// Undefined value.
     Undef,
 }
 
 impl Value {
+    /// Returns a lossy primitive approximation for either numeric variant.
     #[must_use]
     pub fn as_number(&self) -> Option<f64> {
         match self {
@@ -21,6 +30,7 @@ impl Value {
         }
     }
 
+    /// Returns an exact representation for either numeric variant.
     #[must_use]
     pub fn as_real(&self) -> Option<Real> {
         match self {
@@ -30,6 +40,7 @@ impl Value {
         }
     }
 
+    /// Applies `OpenSCAD` truthiness rules.
     #[must_use]
     pub fn as_bool(&self) -> bool {
         match self {
@@ -43,6 +54,7 @@ impl Value {
         }
     }
 
+    /// Borrows the elements when this is a list.
     #[must_use]
     pub fn as_list(&self) -> Option<&[Self]> {
         match self {
@@ -51,19 +63,21 @@ impl Value {
         }
     }
 
+    /// Converts the list elements that are numeric to primitive approximations.
     #[must_use]
     pub fn to_number_list(&self) -> Option<Vec<f64>> {
         self.as_list()
             .map(|l| l.iter().filter_map(Self::as_number).collect())
     }
 
+    /// Converts the list elements that are numeric to exact values.
     #[must_use]
     pub fn to_real_list(&self) -> Option<Vec<Real>> {
         self.as_list()
             .map(|l| l.iter().filter_map(Self::as_real).collect())
     }
 
-    /// Expand ranges into lists for iteration.
+    /// Expands ranges and lists into values suitable for `for` iteration.
     #[must_use]
     pub fn to_iterable(&self) -> Vec<Self> {
         match self {

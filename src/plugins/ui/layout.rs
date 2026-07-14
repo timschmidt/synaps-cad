@@ -52,7 +52,6 @@ pub fn ui_layout_system(
         return;
     };
 
-    // Cache view textures
     if model_views.is_changed() {
         use base64::Engine;
         let mut new_textures = Vec::new();
@@ -82,7 +81,7 @@ pub fn ui_layout_system(
     }
 
     let panel_id = egui::Id::new("side_panel");
-    // Read the current user-set panel width before rendering to prevent content-driven expansion
+    // Capture the user-selected width before child content can affect layout.
     let panel_width_before =
         egui::containers::panel::PanelState::load(ctx, panel_id).map_or(400.0, |s| s.rect.width());
     let response = egui::SidePanel::left(panel_id)
@@ -226,17 +225,14 @@ fn render_ai_assistant_header(
 ) {
     let is_narrow = ui.available_width() < 420.0;
 
-    // Row 1: heading + settings/clear buttons (always visible)
     ui.horizontal(|ui| {
         ui.heading("AI");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            // Clear chat button
             if ui.button("🗑").on_hover_text("Clear chat history").clicked() {
                 chat_state.session_start = chat_state.messages.len();
                 chat_state.history_index = None;
                 chat_state.pending_images.clear();
             }
-            // Verify rounds
             let selected_label = if ai_config.max_verification_rounds == u32::MAX {
                 "∞".into()
             } else {
@@ -264,7 +260,6 @@ fn render_ai_assistant_header(
                         .color(egui::Color32::from_rgb(160, 160, 180)),
                 );
             }
-            // Extended thinking toggle
             ui.checkbox(&mut ai_config.extended_thinking, "")
                 .on_hover_text("Extended Thinking");
             if !is_narrow {
@@ -275,7 +270,6 @@ fn render_ai_assistant_header(
                 )
                 .on_hover_text("Extended Thinking");
             }
-            // Settings button (right beside provider selector)
             if ui
                 .button(if available_models.needs_configuration {
                     "⚙ ⚠"
@@ -287,7 +281,6 @@ fn render_ai_assistant_header(
             {
                 settings_open.0 = !settings_open.0;
             }
-            // Provider selector
             let mut current_adapter = ai_config.adapter_name.clone();
             let combo_w = if is_narrow { 70.0 } else { 80.0 };
             if ai_config.model_name.is_empty()
@@ -525,7 +518,7 @@ fn render_chat_input(
                     chat_state.input_buffer = text;
                     chat_state.pending_images = images;
                 } else {
-                    // Past newest entry — restore draft
+                    // Moving past the newest history entry restores the draft.
                     if let Some(draft) = chat_state.history_draft.take() {
                         chat_state.input_buffer = draft;
                     }
@@ -614,7 +607,6 @@ fn render_chat_messages(
             _ => false,
         };
 
-        // Render AI status bar at the bottom if streaming
         let status_height = if chat_state.is_streaming && !verifying {
             let no_resp = !chat_state
                 .messages
@@ -631,7 +623,6 @@ fn render_chat_messages(
 
         let scroll_height = (chat_height - status_height - ui.spacing().item_spacing.y).max(20.0);
 
-        // Force scroll to bottom when user sends a message
         if chat_state.scroll_to_bottom {
             chat_state.scroll_to_bottom = false;
             let id = egui::Id::new("chat_scroll");
@@ -774,7 +765,6 @@ fn render_chat_messages(
             });
 
         if chat_state.is_streaming && !verifying {
-            // Push to bottom if ScrollArea didn't consume all space
             let remaining = ui.available_height() - status_height;
             if remaining > 0.0 {
                 ui.add_space(remaining);
@@ -844,9 +834,9 @@ fn render_code_header(
         ui.heading("Code");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             // In RTL layout first item = rightmost, last item = leftmost.
-            // Compile/Cancel is last so it is leftmost and always visible on narrow panels.
+            // Compile/Cancel is last so it remains the leftmost item on narrow
+            // panels.
 
-            // Export (rightmost)
             #[cfg(not(target_arch = "wasm32"))]
             if export_state.receiver.is_some() {
                 ui.spinner();
@@ -901,7 +891,6 @@ fn render_code_header(
                 let _ = (last_parts, export_state, runtime);
             }
 
-            // Clear
             if ui.button("🗑").on_hover_text("Clear code & chat").clicked() {
                 scad_code.text.clear();
                 scad_code.dirty = true;
@@ -911,7 +900,6 @@ fn render_code_header(
                 chat_state.verification = crate::plugins::ai_chat::VerificationState::Idle;
             }
 
-            // $fn selector
             let fn_label = format!("$fn {}", scad_code.fn_value);
             egui::ComboBox::from_id_salt("fn_select")
                 .selected_text(&fn_label)
@@ -927,7 +915,6 @@ fn render_code_header(
                     }
                 });
 
-            // Compile/Cancel (leftmost — always visible on narrow panels)
             if compilation_state.is_compiling {
                 if ui
                     .button(
@@ -1144,15 +1131,13 @@ fn render_settings_dialog(
                     }
                     ctx.data_mut(|d| d.insert_temp(visibility_id, show_api_key));
 
-                    // Trim and reload models when API key field loses focus
+                    // Normalize persisted keys before triggering discovery.
                     if api_key_response.lost_focus() && !toggled_visibility {
-                        // Trim whitespace from the API key
                         let trimmed_key = key.trim().to_string();
                         if trimmed_key != *key {
                             *key = trimmed_key;
                         }
 
-                        // Force model reload by marking the API key as changed
                         available_models.force_reload = true;
                     }
                 }

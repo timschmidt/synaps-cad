@@ -436,8 +436,8 @@ impl Plugin for AiChatPlugin {
                     Update,
                     (
                         fetch_models_system.run_if(
-                            // Run when: loading, polling results, explicitly triggered,
-                            // or on first frame (last_adapter empty → needs initial fetch)
+                            // Poll active requests, honor explicit reloads, and
+                            // fetch once on startup while `last_adapter` is empty.
                             |available: Res<AvailableModels>| {
                                 available.loading
                                     || available.receiver.is_some()
@@ -463,7 +463,6 @@ fn fetch_models_system(
     runtime: Res<TokioRuntime>,
     mut redraw: EventWriter<bevy::window::RequestRedraw>,
 ) {
-    // Poll for results from a pending fetch
     if let Some(ref rx_mutex) = available.receiver {
         redraw.send(bevy::window::RequestRedraw);
         let rx = rx_mutex.lock().unwrap();
@@ -474,18 +473,18 @@ fn fetch_models_system(
             match result {
                 Ok(models) => {
                     available.error = None;
-                    // Restore pending model if it's in the fetched list
+                    // Restore the pending selection only if the provider still
+                    // advertises it.
                     if let Some(pending) = available.pending_model.take() {
                         if models.contains(&pending) {
                             ai_config.model_name = pending;
                             available.needs_configuration = false;
                         } else {
-                            // Model was previously configured but is no longer in the list
                             available.needs_configuration = !pending.is_empty();
                         }
                     } else {
-                        // Only flag as needing configuration when we had a model name
-                        // that's no longer in the fetched list (i.e. renamed/deleted)
+                        // An empty selection is valid; only a stale named model
+                        // requires reconfiguration.
                         available.needs_configuration = !ai_config.model_name.is_empty()
                             && !models.contains(&ai_config.model_name);
                     }
@@ -495,8 +494,8 @@ fn fetch_models_system(
                     eprintln!("[SynapsCAD] Failed to fetch models: {e}");
                     available.models.clear();
                     available.error = Some(e);
-                    // Don't set needs_configuration — this is an auth/network error,
-                    // not a missing model
+                    // Authentication and network failures do not invalidate
+                    // the saved model selection.
                 }
             }
             return;
@@ -517,9 +516,8 @@ fn fetch_models_system(
         || url_changed)
         && !available.loading
     {
-        // Clear stale models immediately so the UI doesn't show old data
+        // Do not display models returned by a previous provider or endpoint.
         available.models.clear();
-        // Save current model name to restore after fetch if it's still valid
         if !ai_config.model_name.is_empty() {
             available.pending_model = Some(ai_config.model_name.clone());
         }
@@ -571,7 +569,7 @@ async fn fetch_model_names(
         other => return Err(format!("Unknown adapter: {other}")),
     };
 
-    // Ollama always uses manual fetch (custom or default URL)
+    // Ollama model discovery uses its native tags endpoint.
     if adapter_kind == AdapterKind::Ollama {
         let base = if custom_url.is_empty() {
             default_placeholder_url("Ollama")
@@ -611,7 +609,7 @@ async fn fetch_model_names(
         return Ok(models);
     }
 
-    // Non-Ollama with custom URL: fetch models via OpenAI-compatible endpoint
+    // Custom non-Ollama endpoints use OpenAI-compatible model discovery.
     if !custom_url.is_empty() {
         let url = format!("{custom_url}models");
         let client = reqwest::Client::new();
@@ -634,7 +632,7 @@ async fn fetch_model_names(
             .map_err(|e| format!("Failed to parse models response: {e}"))?;
 
         let mut models = Vec::new();
-        // Try OpenAI-compatible format: { "data": [{"id": "model-name"}, ...] }
+        // OpenAI-compatible shape: { "data": [{"id": "model-name"}, ...] }.
         if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
             for model in data {
                 if let Some(id) = model.get("id").and_then(|i| i.as_str()) {
@@ -642,7 +640,7 @@ async fn fetch_model_names(
                 }
             }
         }
-        // Fallback: Ollama format { "models": [{"name": "model-name"}, ...] }
+        // Some compatible servers instead return Ollama's `models` shape.
         if models.is_empty()
             && let Some(models_arr) = body.get("models").and_then(|m| m.as_array())
         {
@@ -661,7 +659,7 @@ async fn fetch_model_names(
         return Ok(models);
     }
 
-    // Default endpoint: use genai library
+    // The genai client owns discovery for provider-default endpoints.
     let client = api_key.map_or_else(Client::default, |key| {
         let key = key.to_string();
         Client::builder()
@@ -1041,8 +1039,8 @@ async fn run_ai_stream(
     use genai::resolver::{AuthData, Endpoint};
     use genai::{Client, ServiceTarget};
 
-    // Resolve the user-selected adapter kind so we can override genai's model-name inference.
-    // This ensures the correct API format is used (e.g. OpenAI's /chat/completions vs Ollama's /api/chat).
+    // Override model-name inference with the selected provider so genai uses
+    // the corresponding request format.
     let user_adapter_kind = match adapter_name {
         "OpenAI" => Some(AdapterKind::OpenAI),
         "Anthropic" => Some(AdapterKind::Anthropic),
@@ -1114,7 +1112,7 @@ async fn run_ai_stream(
     let mut chat_req = ChatRequest::default().with_system(system_prompt);
 
     for msg in &messages {
-        // Skip error messages — they're only for UI display, not for the AI context
+        // UI error messages are not conversation turns.
         if msg.is_error {
             continue;
         }
@@ -1143,7 +1141,7 @@ async fn run_ai_stream(
         }
     }
 
-    // Attach orthographic views to the last user message if available
+    // Attach the active model views after the conversational history.
     if !views.is_empty() {
         let view_intro = active_view_name.as_ref().map_or_else(
             || "Current 3D model (active view) rendered from five orthographic/isometric views:".to_string(),
@@ -1171,7 +1169,7 @@ async fn run_ai_stream(
         let view_msg = GenaiMessage::user(MessageContent::from_parts(parts));
         chat_req = chat_req.append_message(view_msg);
 
-        // In debug mode, save orthographic views to var/tmp/ for inspection
+        // Debug builds retain attached views under `var/tmp` for inspection.
         if cfg!(debug_assertions) {
             use base64::Engine;
             let tmp_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("var/tmp");
@@ -1197,7 +1195,7 @@ async fn run_ai_stream(
         }
     }
 
-    // Attach views from other $view branches (smaller resolution)
+    // Attach lower-resolution previews of inactive `$view` branches.
     if !other_views.is_empty() {
         for (view_name, view_images) in other_views {
             let mut parts = vec![ContentPart::from_text(format!(
@@ -1218,8 +1216,8 @@ async fn run_ai_stream(
         }
     }
 
-    // Ensure the conversation ends with a user message (some APIs require this)
-    // Check the last non-error message since error messages are filtered out
+    // Providers that reject assistant-final histories receive a minimal user
+    // continuation after filtering UI-only errors.
     let last_non_error_msg = messages.iter().rev().find(|m| !m.is_error);
     let ends_with_user = !views.is_empty()
         || !other_views.is_empty()
@@ -1247,7 +1245,8 @@ async fn run_ai_stream(
         chat_options = chat_options.with_reasoning_effort(ReasoningEffort::High);
     }
 
-    // Workaround for Ollama adapter ignoring auth in genai 0.6.0-beta.3
+    // genai 0.6.0-beta.3 does not forward Ollama authentication, so inject the
+    // selected bearer token explicitly.
     if user_adapter_kind == Some(AdapterKind::Ollama)
         && let Some(key) = api_key
         && !key.is_empty()
@@ -1302,8 +1301,8 @@ async fn run_ai_stream(
         }
     }
 
-    // Detect empty response which might indicate an error on the server side
-    // that wasn't properly communicated (e.g., context size exceeded)
+    // Some servers represent failures such as context exhaustion as an empty
+    // successful response.
     if full_content.is_empty() {
         let warning = "The AI returned an empty response. This may indicate:\n\
             • The request exceeded the model's context limit\n\
@@ -2047,10 +2046,10 @@ fn ai_receive_system(
         return;
     }
 
-    // Keep requesting redraws while streaming to poll the channel
+    // Streaming channel polling requires redraws while the interface is idle.
     redraw.send(bevy::window::RequestRedraw);
 
-    // Drain all available chunks from the channel
+    // Drain the channel so one frame applies all currently available output.
     let chunks: Vec<AiStreamChunk> = {
         let Some(ref rx_mutex) = chat_state.stream_receiver else {
             return;
@@ -2079,7 +2078,7 @@ fn ai_receive_system(
     for chunk in chunks {
         match chunk {
             AiStreamChunk::Chunk(text) => {
-                // Append to the live assistant message (create if needed)
+                // Maintain one live assistant message during streaming.
                 let append = chat_state
                     .messages
                     .last()
@@ -2127,7 +2126,7 @@ fn ai_receive_system(
                 }
             }
             AiStreamChunk::Done { content, reasoning } => {
-                // Replace the live message with the final version
+                // Replace accumulated chunks with the authoritative final text.
                 let replace = chat_state
                     .messages
                     .last()
@@ -2154,7 +2153,8 @@ fn ai_receive_system(
                             }
                             Err(err) => {
                                 eprintln!("[SynapsCAD] Search-and-replace failed: {err}");
-                                // Try full replacement as fallback
+                                // A complete fenced program remains a valid
+                                // fallback when a search block no longer matches.
                                 if let Some(full) = extract_openscad_code(&content) {
                                     scad_code.text = full;
                                     true
@@ -2186,7 +2186,7 @@ fn ai_receive_system(
                 return;
             }
             AiStreamChunk::Error(err) => {
-                // Remove partial streaming message if present
+                // Remove incomplete assistant output before exposing the error.
                 if chat_state
                     .messages
                     .last()
@@ -2194,7 +2194,7 @@ fn ai_receive_system(
                 {
                     chat_state.messages.pop();
                 }
-                // Restore the user's last message back to input so they can retry
+                // Restore the submitted prompt so it can be retried or edited.
                 if let Some(last_user_msg) = chat_state
                     .messages
                     .iter()
@@ -2233,7 +2233,6 @@ fn ai_verify_system(
             chat_state.verification = VerificationState::ReadyToVerify;
         }
         VerificationState::ReadyToVerify => {
-            // Determine which round this will be
             #[allow(clippy::cast_possible_truncation)]
             let round = chat_state
                 .messages
@@ -2250,7 +2249,7 @@ fn ai_verify_system(
                 ai_config.max_verification_rounds.to_string()
             };
 
-            // Inject a verification user message
+            // Add an internal user turn to request visual verification.
             chat_state.messages.push(ChatMessage {
                 role: "user".into(),
                 content: format!("[Verification round {round}/{max_label}] {VERIFICATION_PROMPT}"),
@@ -2260,13 +2259,12 @@ fn ai_verify_system(
                 is_error: false,
             });
 
-            // Trigger the AI send
             chat_state.is_streaming = true;
             chat_state.streaming_start = Some(web_time::Instant::now());
             chat_state.verification = VerificationState::Verifying(round);
         }
         VerificationState::ErrorRecovery(err) => {
-            // AI produced code that caused a compilation error — ask it to fix
+            // Feed compilation failures back into the active verification loop.
             let error_msg = err.clone();
 
             chat_state.messages.push(ChatMessage {
@@ -2281,7 +2279,6 @@ fn ai_verify_system(
                 is_error: false,
             });
 
-            // Trigger AI send to get corrected code
             chat_state.is_streaming = true;
             chat_state.streaming_start = Some(web_time::Instant::now());
             chat_state.verification = VerificationState::Verifying(0); // Reset round counter
@@ -2323,13 +2320,11 @@ enum CodeChange {
 /// Extracts code changes from AI response.
 /// First tries `<<<REPLACE` search-and-replace blocks, then falls back to full `synapscad` block.
 fn extract_code_change(text: &str) -> Option<CodeChange> {
-    // Try search-and-replace first
     let replacements = parse_search_replace(text);
     if !replacements.is_empty() {
         return Some(CodeChange::SearchReplace(replacements));
     }
 
-    // Fall back to full replacement
     extract_openscad_code(text).map(CodeChange::FullReplace)
 }
 
@@ -2340,14 +2335,12 @@ fn parse_search_replace(text: &str) -> Vec<(String, String)> {
 
     while let Some(start) = remaining.find("<<<REPLACE") {
         let after_marker = &remaining[start + "<<<REPLACE".len()..];
-        // Skip to newline after <<<REPLACE
         let after_newline = if let Some(nl) = after_marker.find('\n') {
             &after_marker[nl + 1..]
         } else {
             break;
         };
 
-        // Find the separator ===
         let Some(separator) = after_newline.find("\n===\n") else {
             break;
         };
@@ -2356,7 +2349,6 @@ fn parse_search_replace(text: &str) -> Vec<(String, String)> {
 
         let after_sep = &after_newline[separator + "\n===\n".len()..];
 
-        // Find closing >>>
         let Some(end) = after_sep.find("\n>>>") else {
             break;
         };
@@ -2400,14 +2392,13 @@ fn apply_search_replace(code: &str, replacements: &[(String, String)]) -> Result
 /// Extracts `OpenSCAD` code from AI response.
 /// Supports ` ```synapscad ` and ` ```openscad ` code blocks (ignores any `:suffix`).
 fn extract_openscad_code(text: &str) -> Option<String> {
-    // Try both markers
     let markers = ["```synapscad", "```openscad"];
 
     for marker in &markers {
         if let Some(start) = text.find(marker) {
             let rest = &text[start + marker.len()..];
 
-            // Skip any :suffix and find the newline
+            // Ignore optional fence metadata such as `:main`.
             let newline = rest.find('\n').unwrap_or(0);
             let code_rest = &rest[newline..];
             let end = code_rest.find("```")?;

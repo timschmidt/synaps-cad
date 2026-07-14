@@ -126,7 +126,7 @@ pub struct LastCompiledParts {
     pub parts: Vec<StlMeshData>,
 }
 
-/// Timer to reduce compilation polling frequency and save CPU
+/// Timer that limits how often the main loop polls for compilation results.
 #[derive(Resource)]
 pub struct CompilationPollingTimer {
     timer: Timer,
@@ -135,7 +135,7 @@ pub struct CompilationPollingTimer {
 impl Default for CompilationPollingTimer {
     fn default() -> Self {
         Self {
-            // Poll 10 times per second instead of 60+ times per second
+            // Ten polls per second keep idle redraw work bounded.
             timer: Timer::from_seconds(0.1, TimerMode::Repeating),
         }
     }
@@ -180,12 +180,12 @@ fn trigger_compilation_system(
         return;
     }
 
-    // Cancel any running compilation so the new one can start immediately
+    // Supersede a running compilation so the latest source can start immediately.
     if compilation_state.is_compiling {
         if let Some(cancel) = &compilation_state.cancel_signal {
             cancel.store(true, std::sync::atomic::Ordering::Relaxed);
         }
-        // Drop the old receiver so the cancelled thread's send simply fails
+        // Dropping the receiver makes the canceled thread's eventual send harmless.
         compilation_state.result_receiver = None;
         compilation_state.cancel_signal = None;
         compilation_state.is_compiling = false;
@@ -231,7 +231,7 @@ fn compile_openscad(
 ) -> CompilationResult {
     use super::code_editor::{detect_views, set_active_view};
 
-    // Empty code → clear the viewport (no error, just zero parts)
+    // An empty document intentionally clears the viewport.
     if code.trim().is_empty() {
         return CompilationResult::Success {
             parts: Vec::new(),
@@ -244,7 +244,7 @@ fn compile_openscad(
     let t0 = web_time::Instant::now();
     eprintln!("[SynapsCAD] Compiling (fn={fn_value})...");
 
-    // Catch panics from dependencies (e.g. spade triangulation)
+    // Convert dependency panics into user-visible compilation failures.
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
         compiler::compile_scad_code(code, fn_value, cancel)
     }));
@@ -287,7 +287,7 @@ fn compile_openscad(
                 }
             }
 
-            // Render views for non-active $view branches at smaller resolution
+            // Render inactive `$view` branches at the smaller default resolution.
             let (active_view, all_views) = detect_views(code);
             let mut other_views = Vec::new();
             if all_views.len() > 1 {
@@ -361,12 +361,12 @@ fn poll_compilation_system(
     time: Res<Time>,
     mut redraw: EventWriter<bevy::window::RequestRedraw>,
 ) {
-    // Keep requesting redraws while waiting for compilation results
+    // Polling requires redraws even when the rest of the interface is idle.
     if compilation_state.result_receiver.is_some() {
         redraw.send(bevy::window::RequestRedraw);
     }
 
-    // Only check for compilation results 10 times per second to save CPU
+    // Match the polling rate configured by `CompilationPollingTimer`.
     if !polling_timer.timer.tick(time.delta()).just_finished() {
         return;
     }
@@ -380,6 +380,7 @@ fn poll_compilation_system(
             Ok(r) => r,
             Err(mpsc::TryRecvError::Empty) => return,
             Err(mpsc::TryRecvError::Disconnected) => {
+                eprintln!("[SynapsCAD] Compilation worker disconnected without a result");
                 drop(rx);
                 compilation_state.is_compiling = false;
                 compilation_state.result_receiver = None;
@@ -403,7 +404,7 @@ fn poll_compilation_system(
                 commands.entity(entity).despawn();
             }
 
-            // Show warnings to the user in chat
+            // Surface recoverable compiler diagnostics in the chat panel.
             if !warnings.is_empty() {
                 let warning_text = format!(
                     "⚠️ Compilation warnings:\n{}\n\nPlease report issues with the code that caused them.",
@@ -467,7 +468,7 @@ fn poll_compilation_system(
             compilation_state.should_zoom = false; // Reset flag after use
         }
         CompilationResult::Error(err) => {
-            // Check if this error is from AI-generated code (verification in progress)
+            // AI-generated failures enter the verification recovery path.
             let is_ai_error = chat_state.verification == VerificationState::WaitingForCompilation;
 
             let user_msg = if err.contains("Internal error")
@@ -489,13 +490,13 @@ fn poll_compilation_system(
                 is_error: true,
             });
 
-            // If AI produced broken code, trigger error recovery
+            // Feed broken AI output back to the active verification loop.
             if is_ai_error {
                 chat_state.verification = VerificationState::ErrorRecovery(err);
             }
         }
         CompilationResult::Canceled => {
-            // Reset verification loop if it was waiting for this compilation
+            // Manual compilation failures stop any stale verification state.
             if chat_state.verification == VerificationState::WaitingForCompilation {
                 chat_state.verification = VerificationState::Idle;
             }

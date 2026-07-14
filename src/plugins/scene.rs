@@ -74,21 +74,19 @@ fn setup_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // Camera
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(30.0, 30.0, 30.0).looking_at(Vec3::ZERO, Vec3::Y),
         MainCamera,
     ));
 
-    // CAD-style lighting: strong ambient + soft camera-relative fill light (no harsh shadows).
-    // This reveals surface curvature (holes, tubes, fillets) without obscuring detail.
+    // Strong ambient light plus a shadow-free camera-relative key reveals
+    // curvature without obscuring detail.
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
         brightness: 800.0,
     });
 
-    // Key light — soft, shadow-free, will be updated to follow camera each frame
     commands.spawn((
         DirectionalLight {
             illuminance: 4_000.0,
@@ -99,7 +97,6 @@ fn setup_scene(
         CameraFollowLight,
     ));
 
-    // --- XYZ Axis Lines + Grid ---
     let grid_size = 50.0;
     spawn_axis_lines(&mut commands, &mut meshes, &mut materials, grid_size);
     spawn_grid(&mut commands, &mut meshes, &mut materials, grid_size);
@@ -111,7 +108,7 @@ fn spawn_axis_lines(
     materials: &mut ResMut<Assets<StandardMaterial>>,
     axis_length: f32,
 ) {
-    // X axis (red)
+    // X is red.
     spawn_axis_line(
         commands,
         meshes,
@@ -120,7 +117,7 @@ fn spawn_axis_lines(
         Vec3::X * axis_length,
         Color::srgb(0.9, 0.2, 0.2),
     );
-    // Y axis (blue) — Bevy Y-up = OpenSCAD Z-up
+    // Blue Bevy Y corresponds to OpenSCAD Z.
     spawn_axis_line(
         commands,
         meshes,
@@ -129,7 +126,7 @@ fn spawn_axis_lines(
         Vec3::Y * axis_length,
         Color::srgb(0.2, 0.4, 0.9),
     );
-    // Z axis (green) — Bevy Z = OpenSCAD Y
+    // Green Bevy Z corresponds to OpenSCAD Y.
     spawn_axis_line(
         commands,
         meshes,
@@ -183,13 +180,11 @@ fn spawn_grid(
 
     let mut positions: Vec<[f32; 3]> = Vec::new();
 
-    // Lines parallel to X axis (varying Z)
     for i in -steps..=steps {
         let z = i as f32 * grid_step;
         positions.push([-half, 0.0, z]);
         positions.push([half, 0.0, z]);
     }
-    // Lines parallel to Z axis (varying X)
     for i in -steps..=steps {
         let x = i as f32 * grid_step;
         positions.push([x, 0.0, -half]);
@@ -233,7 +228,7 @@ fn update_grid_system(
     grid_q: Query<Entity, With<GridEntity>>,
     axis_q: Query<Entity, With<AxisLineEntity>>,
 ) {
-    // Compute combined AABB of all CadModel entities
+    // Size the grid from the combined world-space bounds of all CAD parts.
     let mut bb_min = Vec3::splat(f32::INFINITY);
     let mut bb_max = Vec3::splat(f32::NEG_INFINITY);
     let mut found = false;
@@ -267,7 +262,7 @@ fn update_grid_system(
     let desired = if found {
         let half_extents = (bb_max - bb_min) * 0.5;
         let max_extent = half_extents.max_element();
-        // Round up to nearest 10 for clean grid lines
+        // Multiples of ten keep the outer grid lines aligned with its step.
         let raw = (max_extent * 1.5).max(50.0);
         (raw / 10.0).ceil() * 10.0
     } else {
@@ -278,7 +273,6 @@ fn update_grid_system(
         return;
     }
 
-    // Despawn old grid + axis entities
     for entity in &grid_q {
         commands.entity(entity).despawn();
     }
@@ -288,7 +282,6 @@ fn update_grid_system(
 
     current_size.0 = desired;
 
-    // Respawn with new size
     spawn_axis_lines(&mut commands, &mut meshes, &mut materials, desired);
     spawn_grid(&mut commands, &mut meshes, &mut materials, desired);
 }

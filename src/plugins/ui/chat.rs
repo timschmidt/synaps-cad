@@ -35,7 +35,7 @@ pub fn render_chat_content(ui: &mut egui::Ui, content: &str, is_error: bool) -> 
             }
 
             let after_marker = &remaining[rp + "<<<REPLACE".len()..];
-            // skip optional text/whitespace on same line as <<<REPLACE
+            // Skip optional metadata on the `<<<REPLACE` line.
             let after_newline = if let Some(nl) = after_marker.find('\n') {
                 &after_marker[nl + 1..]
             } else {
@@ -189,7 +189,7 @@ pub fn render_markdown_text(ui: &mut egui::Ui, text: &str, is_error: bool) {
             continue;
         }
 
-        // Detect Markdown headers and checklists
+        // Detect the Markdown constructs rendered specially below.
         let is_header = trimmed.starts_with('#');
         let is_checklist = trimmed.starts_with("- [ ]") || trimmed.starts_with("- [x]");
 

@@ -2,8 +2,9 @@
 name = "synaps-cad"
 license = "GPL-3.0-or-later"
 authors = ["Bernhard Janetzki <boerni@gmail.com>"]
-repository = "https://github.com/ierror/synaps-cad"
-homepage = "https://github.com/ierror/synaps-cad"
+repository = "https://github.com/timschmidt/synaps-cad"
+homepage = "https://timschmidt.github.io/synaps-cad"
+description = "OpenSCAD IDE and exact CSG compiler with interactive and AI-assisted modeling"
 readme = "README.md"
 version = "0.10.1"
 edition = "2024"
@@ -17,8 +18,8 @@ serde_json = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
 base64 = "0.22"
 reqwest = { version = "0.13", features = ["json"] }
-# Hyper sibling dependency switch: keep both local path and crates.io lines; do not remove either.
-# Development mode uses the local path line. For release, comment it and uncomment the crates.io line.
+# Use the sibling checkout during development; releases can switch to the
+# corresponding crates.io dependency below.
 csgrs = { path = "../csgrs", features = ["offset"] }
 # csgrs = { version = "0.23.0", features = ["offset"] }
 nalgebra = "0.34"
@@ -27,7 +28,6 @@ hyperreal = { path = "../hyperreal", optional = true, features = ["dispatch-trac
 url = "2"
 web-time = "1"
 
-# OpenSCAD parser
 openscad-rs = "0.1.0"
 rfd = "0.17.2"
 ttf-parser = "0.25"
@@ -68,7 +68,7 @@ pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 too_many_lines = "allow"
 
-# Run clippy and tests before cargo-release creates a version bump commit
+# Validate the release candidate before cargo-release creates its version commit.
 [package.metadata.release]
 pre-release-hook = ["cargo", "clippy", "--", "-D", "warnings"]
 

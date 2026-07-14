@@ -39,7 +39,7 @@ pub fn named_color(name: &str) -> Option<[f32; 3]> {
         "peru" => [0.804, 0.522, 0.247],
         "wheat" => [0.961, 0.871, 0.702],
         "linen" => [0.980, 0.941, 0.902],
-        // OpenSCAD-specific / extended CSS colors
+        // OpenSCAD-specific and extended CSS colors.
         "darkgreen" => [0.0, 0.392, 0.0],
         "darkred" => [0.545, 0.0, 0.0],
         "darkblue" => [0.0, 0.0, 0.545],

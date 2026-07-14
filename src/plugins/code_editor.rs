@@ -77,10 +77,6 @@ fn track_code_changes_system(scad_code: Res<ScadCode>, mut history: ResMut<UndoH
     }
 }
 
-// ---------------------------------------------------------------------------
-// View detection: parses `$view = "xxx";` and `$view == "xxx"` from code
-// ---------------------------------------------------------------------------
-
 /// Detect views from the code. Returns `(active_view, all_views)`.
 /// - `active_view`: the value in `$view = "xxx";` (None if not present)
 /// - `all_views`: all unique view names found in `$view == "xxx"` conditionals
@@ -88,14 +84,13 @@ pub fn detect_views(code: &str) -> (Option<String>, Vec<String>) {
     let mut active: Option<String> = None;
     let mut views: Vec<String> = Vec::new();
 
-    // Single pass: find all `$view` occurrences, classify as assignment or conditional
+    // Classify each `$view` occurrence as an assignment or comparison.
     let mut search_from = 0;
     while let Some(pos) = code[search_from..].find("$view") {
         let abs_pos = search_from + pos;
         let rest = &code[abs_pos + 5..];
         let trimmed = rest.trim_start();
         if trimmed.starts_with("==") {
-            // Conditional: $view == "xxx"
             let after_eq = trimmed.strip_prefix("==").unwrap_or_default().trim_start();
             if let Some(val) = extract_quoted_string(after_eq)
                 && !views.contains(&val)
@@ -103,7 +98,6 @@ pub fn detect_views(code: &str) -> (Option<String>, Vec<String>) {
                 views.push(val);
             }
         } else if trimmed.starts_with('=') {
-            // Assignment: $view = "xxx";
             let after_eq = trimmed.strip_prefix('=').unwrap_or_default().trim_start();
             if let Some(val) = extract_quoted_string(after_eq)
                 && active.is_none()

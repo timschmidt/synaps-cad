@@ -77,7 +77,7 @@ pub fn axis_angle_to_euler(angle_deg: f64, ax: f64, ay: f64, az: f64) -> (f64, f
     let s = theta.sin();
     let t = 1.0 - c;
 
-    // Rotation matrix from Rodrigues' formula
+    // Rodrigues' rotation formula.
     let r00 = (t * ux).mul_add(ux, c);
     let _r01 = (t * ux).mul_add(uy, -(s * uz));
     let _r02 = (t * ux).mul_add(uz, s * uy);
