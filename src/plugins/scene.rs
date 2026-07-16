@@ -1,6 +1,8 @@
 use bevy::prelude::*;
 use bevy::render::mesh::{MeshAabb, PrimitiveTopology};
 
+use super::transformed_aabb;
+
 pub struct ScenePlugin;
 
 #[derive(Component)]
@@ -240,22 +242,9 @@ fn update_grid_system(
         let Some(aabb) = mesh.compute_aabb() else {
             continue;
         };
-        let local_min = Vec3::from(aabb.center) - Vec3::from(aabb.half_extents);
-        let local_max = Vec3::from(aabb.center) + Vec3::from(aabb.half_extents);
-        for corner in [
-            Vec3::new(local_min.x, local_min.y, local_min.z),
-            Vec3::new(local_max.x, local_min.y, local_min.z),
-            Vec3::new(local_min.x, local_max.y, local_min.z),
-            Vec3::new(local_min.x, local_min.y, local_max.z),
-            Vec3::new(local_max.x, local_max.y, local_min.z),
-            Vec3::new(local_max.x, local_min.y, local_max.z),
-            Vec3::new(local_min.x, local_max.y, local_max.z),
-            Vec3::new(local_max.x, local_max.y, local_max.z),
-        ] {
-            let world = global_tf.transform_point(corner);
-            bb_min = bb_min.min(world);
-            bb_max = bb_max.max(world);
-        }
+        let (world_min, world_max) = transformed_aabb(&aabb, global_tf);
+        bb_min = bb_min.min(world_min);
+        bb_max = bb_max.max(world_max);
         found = true;
     }
 

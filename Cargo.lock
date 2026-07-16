@@ -2081,6 +2081,7 @@ name = "csgrs"
 version = "0.23.0"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "contour_tracing",
  "doc-image-embed",
  "dxf",
