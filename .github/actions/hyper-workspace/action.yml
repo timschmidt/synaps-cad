@@ -21,7 +21,7 @@ runs:
           git -C "${destination}" checkout --detach FETCH_HEAD
         }
 
-        checkout_repo csgrs https://github.com/timschmidt/csgrs.git 16c2a69cf5e4878df7135889ab0cad87dc2b5748
+        checkout_repo csgrs https://github.com/timschmidt/csgrs.git b38c273afe59d4d76d7003b27decdcf68bca51e1
         checkout_repo hypercurve https://github.com/timschmidt/hypercurve.git e7626d9ff42d17e8b55c7db40c25f342acae51ce
         checkout_repo hyperlattice https://github.com/timschmidt/hyperlattice.git d8cef98eb2a43e1bff505932af42f2e0c5b28d42
         checkout_repo hyperlimit https://github.com/timschmidt/hyperlimit.git 967e1373fad883e43689870e9543717c48a4dda9
