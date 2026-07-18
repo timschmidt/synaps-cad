@@ -1,6 +1,6 @@
 [package]
 name = "synaps-cad"
-license = "GPL-3.0-or-later"
+license = "MIT OR Apache-2.0"
 authors = ["Bernhard Janetzki <boerni@gmail.com>"]
 repository = "https://github.com/ierror/synaps-cad"
 homepage = "https://github.com/ierror/synaps-cad"

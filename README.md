@@ -189,4 +189,7 @@ cargo test -- --nocapture          # show println/eprintln output
 
 ## License
 
-GPL v3
+Dual-licensed under either of:
+
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
