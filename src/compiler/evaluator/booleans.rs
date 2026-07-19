@@ -69,10 +69,10 @@ impl Evaluator {
                 Some(Shape::Sketch2D(sketch))
             } else {
                 let distance = r_val;
-                let offset = sketch.offset_rounded(distance.clone());
+                let offset = sketch.offset_rounded(distance);
                 Some(Shape::Sketch2D(
                     if offset.is_empty() && !sketch.is_empty() {
-                        sketch.offset_rounded_finite_output(distance)
+                        sketch
                     } else {
                         offset
                     },
@@ -90,10 +90,10 @@ impl Evaluator {
                 Some(Shape::Sketch2D(sketch))
             } else {
                 let distance = d;
-                let offset = sketch.offset_rounded(distance.clone());
+                let offset = sketch.offset_rounded(distance);
                 Some(Shape::Sketch2D(
                     if offset.is_empty() && !sketch.is_empty() {
-                        sketch.offset_rounded_finite_output(distance)
+                        sketch
                     } else {
                         offset
                     },
