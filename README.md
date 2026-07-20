@@ -161,4 +161,9 @@ SynapsCAD builds on [`csgrs`](https://github.com/timschmidt/csgrs), [`hyperreal`
 
 ## License and contact
 
-SynapsCAD is licensed under [GPL-3.0-or-later](LICENSE). Contact [@boerni@chaos.social](https://chaos.social/@boerni).
+SynapsCAD is dual-licensed under either of:
+
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+
+Contact [@boerni@chaos.social](https://chaos.social/@boerni).
