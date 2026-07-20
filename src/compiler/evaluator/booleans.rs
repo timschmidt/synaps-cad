@@ -143,9 +143,9 @@ impl Evaluator {
                 .or_else(|| crate::compiler::rendering::colors::named_color(name)),
             Value::List(items) => {
                 if items.len() >= 3 {
-                    let r = items[0].as_number()? as f32;
-                    let g = items[1].as_number()? as f32;
-                    let b = items[2].as_number()? as f32;
+                    let r = items[0].to_f64_lossy()? as f32;
+                    let g = items[1].to_f64_lossy()? as f32;
+                    let b = items[2].to_f64_lossy()? as f32;
                     Some([r, g, b])
                 } else {
                     None

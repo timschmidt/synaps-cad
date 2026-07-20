@@ -434,9 +434,8 @@ fn exact_240_degree_rotation_places_rocket_fin_in_the_third_sector() {
 }
 
 #[test]
-fn exact_rational_arithmetic_reaches_mesh_coordinates_without_float_demotion() {
-    let mesh =
-        compile_to_csg_mesh(r#"cube([exact("1/3") + exact("1/6"), exact("2/5"), exact("3/7")]);"#);
+fn rational_arithmetic_reaches_mesh_coordinates_without_float_demotion() {
+    let mesh = compile_to_csg_mesh("cube([1/3 + 1/6, 2/5, 3/7]);");
     let bounds = mesh.bounding_box();
 
     assert_eq!(bounds.maxs.x, "1/2".parse::<csgrs::Real>().unwrap());
@@ -445,24 +444,87 @@ fn exact_rational_arithmetic_reaches_mesh_coordinates_without_float_demotion() {
 }
 
 #[test]
-fn exact_symbolic_constants_and_trig_reach_transforms() {
-    let mesh = compile_to_csg_mesh(
-        r#"
-        translate([cos(exact("60")), sin(exact("30")), 0])
-            cube(exact("1/7"));
-        "#,
-    );
+fn symbolic_constants_and_trig_reach_transforms() {
+    let mesh = compile_to_csg_mesh("translate([cos(60), sin(30), 0]) cube(1/7);");
     let bounds = mesh.bounding_box();
     let half = "1/2".parse::<csgrs::Real>().unwrap();
 
     assert_eq!(bounds.mins.x, half);
     assert_eq!(bounds.mins.y, "1/2".parse::<csgrs::Real>().unwrap());
 
-    let mut evaluator = Evaluator::new();
+    let evaluator = Evaluator::new();
     assert!(matches!(
-        evaluator.eval_builtin_function("exact", &[Value::String("pi".into())]),
-        Value::Exact(value) if value == csgrs::Real::pi()
+        evaluator.variables.get("PI"),
+        Some(Value::Number(value)) if value == &csgrs::Real::pi()
     ));
+}
+
+#[test]
+fn openscad_math_builtins_return_hyperreal_results_directly() {
+    fn assert_real(value: Value, expected: &csgrs::Real) {
+        assert!(matches!(value, Value::Number(actual) if &actual == expected));
+    }
+
+    let mut evaluator = Evaluator::new();
+    let one = csgrs::Real::one();
+    let two = csgrs::Real::from(2_u8);
+    let half = (one.clone() / two.clone()).unwrap();
+
+    assert_real(
+        evaluator.eval_builtin_function("sin", &[Value::Number(csgrs::Real::from(30_u8))]),
+        &csgrs::Real::from(30_u8).to_radians().sin(),
+    );
+    assert_real(
+        evaluator.eval_builtin_function("asin", &[Value::Number(half)]),
+        &csgrs::Real::from(30_u8),
+    );
+    assert_real(
+        evaluator.eval_builtin_function("sqrt", &[Value::Number(two.clone())]),
+        &two.clone().sqrt().unwrap(),
+    );
+    assert_real(
+        evaluator.eval_builtin_function("exp", &[Value::Number(one.clone())]),
+        &csgrs::Real::e(),
+    );
+    assert_real(
+        evaluator.eval_builtin_function("ln", &[Value::Number(csgrs::Real::e())]),
+        &one,
+    );
+    assert_real(
+        evaluator.eval_builtin_function(
+            "pow",
+            &[Value::Number(two), Value::Number(csgrs::Real::from(3_u8))],
+        ),
+        &csgrs::Real::from(8_u8),
+    );
+    assert!(evaluator.warnings.is_empty());
+}
+
+#[test]
+fn numeric_equality_uses_hyperreal_certification() {
+    let source = openscad_rs::parse("answer = exp(ln(2)) == 2; truth = !sin(0);")
+        .expect("exact comparison test source should parse");
+    let mut evaluator = Evaluator::new();
+    evaluator.eval_source_file(&source);
+
+    assert!(matches!(
+        evaluator.variables.get("answer"),
+        Some(Value::Bool(true))
+    ));
+    assert!(matches!(
+        evaluator.variables.get("truth"),
+        Some(Value::Bool(true))
+    ));
+}
+
+#[test]
+fn decimal_and_scientific_literals_reach_geometry_as_exact_rationals() {
+    let mesh = compile_to_csg_mesh("cube([0.1, 2.5e-1, 3E-1]);");
+    let bounds = mesh.bounding_box();
+
+    assert_eq!(bounds.maxs.x, "1/10".parse::<csgrs::Real>().unwrap());
+    assert_eq!(bounds.maxs.y, "1/4".parse::<csgrs::Real>().unwrap());
+    assert_eq!(bounds.maxs.z, "3/10".parse::<csgrs::Real>().unwrap());
 }
 
 #[test]

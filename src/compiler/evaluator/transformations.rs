@@ -4,12 +4,7 @@ use csgrs::csg::CSG;
 use openscad_rs::ast::Statement;
 
 use super::{Evaluator, Value};
-use crate::compiler::geometry::conversions::axis_angle_to_euler;
 use crate::compiler::geometry::{Shape, TransformKind};
-
-fn to_real(value: f64) -> Real {
-    Real::try_from(value).ok().unwrap_or_else(Real::zero)
-}
 
 impl Evaluator {
     pub fn eval_transform(
@@ -66,35 +61,15 @@ impl Evaluator {
                     Self::get_positional_arg(args, 0).or_else(|| Self::get_named_arg(args, "a"));
 
                 if let (Some(angle), Some(axis)) =
-                    (a_val.as_ref().and_then(|v| v.as_real()), &axis_vec)
+                    (a_val.as_ref().and_then(|v| v.as_real()), axis_vec)
                     && axis.len() >= 3
-                    && axis
-                        .iter()
-                        .all(|component| component == &Real::zero() || component == &Real::one())
-                    && axis
-                        .iter()
-                        .filter(|component| *component == &Real::one())
-                        .count()
-                        == 1
                 {
-                    let zero = Real::zero();
-                    if axis[0] == Real::one() {
-                        shape.rotate(angle, zero.clone(), zero)
-                    } else if axis[1] == Real::one() {
-                        shape.rotate(zero.clone(), angle, zero)
-                    } else {
-                        shape.rotate(zero.clone(), zero, angle)
-                    }
-                } else if let (Some(angle), Some(ax)) =
-                    (a_val.as_ref().and_then(|v| v.as_number()), &axis_vec)
-                {
-                    let (ex, ey, ez) = axis_angle_to_euler(
-                        angle,
-                        ax.first().and_then(Real::to_f64_lossy).unwrap_or(0.0),
-                        ax.get(1).and_then(Real::to_f64_lossy).unwrap_or(0.0),
-                        ax.get(2).and_then(Real::to_f64_lossy).unwrap_or(1.0),
-                    );
-                    shape.rotate(to_real(ex), to_real(ey), to_real(ez))
+                    let axis = hyperlattice::Vector3::new([
+                        axis[0].clone(),
+                        axis[1].clone(),
+                        axis[2].clone(),
+                    ]);
+                    shape.rotate_axis_angle(&axis, &angle)
                 } else if let Some(v) = a_val.and_then(Value::to_real_list) {
                     let (x, y, z) = (
                         v.first().cloned().unwrap_or_else(Real::zero),
@@ -122,7 +97,7 @@ impl Evaluator {
                         );
                         shape.scale(x, y, z)
                     }
-                    Some(Value::Number(_) | Value::Exact(_)) => {
+                    Some(Value::Number(_)) => {
                         let s = val.and_then(Value::as_real).unwrap_or_else(Real::one);
                         shape.scale(s.clone(), s.clone(), s)
                     }
@@ -159,7 +134,7 @@ impl Evaluator {
         let scale = Self::get_named_arg(args, "scale").map_or_else(
             || [Real::one(), Real::one()],
             |value| match value {
-                Value::Number(_) | Value::Exact(_) => {
+                Value::Number(_) => {
                     let scale = value.as_real().unwrap_or_else(Real::one);
                     [scale.clone(), scale]
                 }
@@ -174,9 +149,11 @@ impl Evaluator {
             },
         );
         let center = Self::get_arg_bool(args, "center", 99, false);
-        let slices = Self::get_arg_number(args, "slices", 99)
-            .filter(|value| value.is_finite() && *value >= 1.0)
-            .map_or_else(|| self.resolve_fn(args), |value| value.round() as usize);
+        let slices = Self::get_arg_real(args, "slices", 99)
+            .and_then(|value| value.round_certified().ok())
+            .and_then(|integer| usize::try_from(integer).ok())
+            .filter(|value| *value >= 1)
+            .unwrap_or_else(|| self.resolve_fn(args));
 
         let child_shapes = self.eval_children(children);
         if child_shapes.is_empty() {

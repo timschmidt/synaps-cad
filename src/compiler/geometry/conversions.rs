@@ -63,46 +63,6 @@ pub fn csg_mesh_to_mesh_data(mesh: &CsgMesh<()>) -> Result<MeshData, String> {
     })
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-/// Convert axis-angle rotation to Euler angles.
-#[must_use]
-pub fn axis_angle_to_euler(angle_deg: f64, ax: f64, ay: f64, az: f64) -> (f64, f64, f64) {
-    let len = ax.mul_add(ax, ay.mul_add(ay, az * az)).sqrt();
-    if len < 1e-12 {
-        return (0.0, 0.0, 0.0);
-    }
-    let (ux, uy, uz) = (ax / len, ay / len, az / len);
-    let theta = angle_deg.to_radians();
-    let c = theta.cos();
-    let s = theta.sin();
-    let t = 1.0 - c;
-
-    // Rodrigues' rotation formula.
-    let r00 = (t * ux).mul_add(ux, c);
-    let _r01 = (t * ux).mul_add(uy, -(s * uz));
-    let _r02 = (t * ux).mul_add(uz, s * uy);
-    let r10 = (t * uy).mul_add(ux, s * uz);
-    let _r11 = (t * uy).mul_add(uy, c);
-    let _r12 = (t * uy).mul_add(uz, -(s * ux));
-    let r20 = (t * uz).mul_add(ux, -(s * uy));
-    let r21 = (t * uz).mul_add(uy, s * ux);
-    let r22 = (t * uz).mul_add(uz, c);
-
-    // Convert to intrinsic ZYX Euler angles.
-    let pitch = if r20.abs() < 1.0 - 1e-12 {
-        (-r20).asin()
-    } else if r20 < 0.0 {
-        std::f64::consts::FRAC_PI_2
-    } else {
-        -std::f64::consts::FRAC_PI_2
-    };
-    let is_not_singular = pitch.cos().abs() > 1e-12_f64;
-    let yaw = if is_not_singular { r21.atan2(r22) } else { 0.0 };
-    let roll = if is_not_singular { r10.atan2(r00) } else { 0.0 };
-
-    (yaw.to_degrees(), pitch.to_degrees(), roll.to_degrees())
-}
-
 #[cfg(test)]
 mod tests {
     use super::csg_mesh_to_mesh_data;

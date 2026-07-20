@@ -5,7 +5,7 @@ use csgrs::Real;
 use csgrs::csg::CSG;
 use csgrs::mesh::Mesh as CsgMesh;
 use csgrs::mesh::plane::Plane;
-use hyperlattice::Vector3;
+use hyperlattice::{Matrix4, Vector3};
 
 #[derive(Clone, Copy, Debug)]
 pub enum BoolOp {
@@ -51,13 +51,19 @@ impl Shape {
     pub fn into_csg_mesh(self) -> CsgMesh<()> {
         match self {
             Self::Mesh3D(m) => m,
-            Self::Sketch2D(s) => s.extrude(Self::to_real(0.01), ()),
+            Self::Sketch2D(s) => s.extrude(Self::sketch_thickness(), ()),
             Self::Failed(_) => CsgMesh::new(),
         }
     }
 
-    fn to_real(value: f64) -> Real {
-        Real::try_from(value).ok().unwrap_or_else(Real::zero)
+    fn sketch_thickness() -> Real {
+        (Real::one() / Real::from(100_u8))
+            .expect("the exact sketch thickness denominator is nonzero")
+    }
+
+    fn planar_tolerance() -> Real {
+        (Real::one() / Real::from(1_000_000_000_000_u64))
+            .expect("the exact planar tolerance denominator is nonzero")
     }
 
     #[must_use]
@@ -104,15 +110,15 @@ impl Shape {
 
     #[must_use]
     pub fn translate(self, x: Real, y: Real, z: Real) -> Self {
-        let zero = Self::to_real(0.0);
-        let epsilon = Self::to_real(1e-12);
+        let zero = Real::zero();
+        let epsilon = Self::planar_tolerance();
         match self {
             Self::Mesh3D(m) => Self::Mesh3D(m.into_translated(x, y, z)),
             Self::Sketch2D(s) => {
                 if z.abs() < epsilon {
                     Self::Sketch2D(s.translate(x, y, zero))
                 } else {
-                    Self::from_csg_mesh(s.extrude(Self::to_real(0.01), ()).translate(x, y, z))
+                    Self::from_csg_mesh(s.extrude(Self::sketch_thickness(), ()).translate(x, y, z))
                 }
             }
             Self::Failed(e) => Self::Failed(e),
@@ -121,15 +127,15 @@ impl Shape {
 
     #[must_use]
     pub fn rotate(self, x: Real, y: Real, z: Real) -> Self {
-        let zero = Self::to_real(0.0);
-        let epsilon = Self::to_real(1e-12);
+        let zero = Real::zero();
+        let epsilon = Self::planar_tolerance();
         match self {
             Self::Mesh3D(m) => Self::Mesh3D(m.into_rotated(x, y, z)),
             Self::Sketch2D(s) => {
                 if x.abs() < epsilon && y.abs() < epsilon {
                     Self::Sketch2D(s.rotate(zero.clone(), zero, z))
                 } else {
-                    Self::from_csg_mesh(s.extrude(Self::to_real(0.01), ()).rotate(x, y, z))
+                    Self::from_csg_mesh(s.extrude(Self::sketch_thickness(), ()).rotate(x, y, z))
                 }
             }
             Self::Failed(e) => Self::Failed(e),
@@ -138,15 +144,15 @@ impl Shape {
 
     #[must_use]
     pub fn scale(self, sx: Real, sy: Real, sz: Real) -> Self {
-        let one = Self::to_real(1.0);
-        let epsilon = Self::to_real(1e-12);
+        let one = Real::one();
+        let epsilon = Self::planar_tolerance();
         match self {
             Self::Mesh3D(m) => Self::Mesh3D(m.scale(sx, sy, sz)),
             Self::Sketch2D(s) => {
                 if (sz.clone() - one.clone()).abs() < epsilon {
                     Self::Sketch2D(s.scale(sx, sy, one))
                 } else {
-                    Self::from_csg_mesh(s.extrude(Self::to_real(0.01), ()).scale(sx, sy, sz))
+                    Self::from_csg_mesh(s.extrude(Self::sketch_thickness(), ()).scale(sx, sy, sz))
                 }
             }
             Self::Failed(e) => Self::Failed(e),
@@ -163,6 +169,26 @@ impl Shape {
             Self::Mesh3D(m) => Self::Mesh3D(m.mirror(plane)),
             Self::Sketch2D(s) => Self::Sketch2D(s.mirror(plane)),
             Self::Failed(e) => Self::Failed(e),
+        }
+    }
+
+    /// Rotates around an arbitrary exact axis without a primitive-float Euler conversion.
+    #[must_use]
+    pub fn rotate_axis_angle(self, axis: &Vector3, angle_degrees: &Real) -> Self {
+        let planar = axis.0[0] == Real::zero() && axis.0[1] == Real::zero();
+        let matrix = match Matrix4::rotation_axis_angle(axis, angle_degrees.to_radians()) {
+            Ok(matrix) => matrix,
+            Err(error) => return Self::Failed(format!("axis-angle rotation failed: {error:?}")),
+        };
+        match self {
+            Self::Mesh3D(mesh) => Self::Mesh3D(mesh.transform(&matrix)),
+            Self::Sketch2D(sketch) if planar => Self::Sketch2D(sketch.transform(&matrix)),
+            Self::Sketch2D(sketch) => Self::Mesh3D(
+                sketch
+                    .extrude(Self::sketch_thickness(), ())
+                    .transform(&matrix),
+            ),
+            Self::Failed(error) => Self::Failed(error),
         }
     }
 

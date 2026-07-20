@@ -38,7 +38,7 @@ pub struct UserFunction {
 /// Stateful evaluator for one `OpenSCAD` source file.
 ///
 /// The evaluator resolves expressions, user definitions, geometry modules,
-/// colors, and exact-number extensions into [`Shape`] values. Construct a
+/// colors, and exact-real expressions into [`Shape`] values. Construct a
 /// fresh evaluator per independent compilation.
 pub struct Evaluator {
     /// Current lexical variable bindings, including `OpenSCAD` special variables.
@@ -67,14 +67,19 @@ impl Default for Evaluator {
 }
 
 impl Evaluator {
+    #[allow(clippy::cast_lossless)]
+    fn real_from_usize(value: usize) -> Real {
+        Real::from(value as u128)
+    }
+
     /// Creates an evaluator with `OpenSCAD`'s default tessellation variables.
     #[must_use]
     pub fn new() -> Self {
         let mut variables = HashMap::new();
-        variables.insert("$fn".into(), Value::Number(0.0));
-        variables.insert("$fa".into(), Value::Number(12.0));
-        variables.insert("$fs".into(), Value::Number(2.0));
-        variables.insert("PI".into(), Value::Number(std::f64::consts::PI));
+        variables.insert("$fn".into(), Value::Number(Real::zero()));
+        variables.insert("$fa".into(), Value::Number(Real::from(12_u8)));
+        variables.insert("$fs".into(), Value::Number(Real::from(2_u8)));
+        variables.insert("PI".into(), Value::Number(Real::pi()));
         variables.insert("$preview".into(), Value::Bool(true));
         Self {
             variables,
@@ -103,54 +108,61 @@ impl Evaluator {
         self.resolve_fn_with_radius(args, None)
     }
 
-    #[allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        clippy::similar_names
-    )]
+    #[allow(clippy::similar_names)]
     pub fn resolve_fn_with_radius(
         &self,
         args: &[(Option<String>, Value)],
-        r: Option<f64>,
+        r: Option<&Real>,
     ) -> usize {
         let fn_val = Self::get_named_arg(args, "$fn")
-            .and_then(Value::as_number)
-            .or_else(|| self.variables.get("$fn").and_then(Value::as_number))
-            .unwrap_or(0.0);
+            .and_then(Value::as_real)
+            .or_else(|| self.variables.get("$fn").and_then(Value::as_real))
+            .unwrap_or_else(Real::zero);
 
-        if fn_val > 0.0 {
-            return fn_val as usize;
+        if fn_val > Real::zero()
+            && let Ok(integer) = fn_val.floor_certified()
+            && let Ok(value) = usize::try_from(integer)
+        {
+            return value;
         }
 
         let fa = self
             .variables
             .get("$fa")
-            .and_then(Value::as_number)
-            .unwrap_or(12.0);
+            .and_then(Value::as_real)
+            .unwrap_or_else(|| Real::from(12_u8));
         let fs = self
             .variables
             .get("$fs")
-            .and_then(Value::as_number)
-            .unwrap_or(2.0);
+            .and_then(Value::as_real)
+            .unwrap_or_else(|| Real::from(2_u8));
 
         // Bound both controls away from zero to keep tessellation finite.
-        let fa = fa.max(0.01);
-        let fs = fs.max(0.01);
+        let minimum_control = (Real::one() / Real::from(100_u8)).unwrap_or_else(|_| Real::zero());
+        let fa = fa.max(&minimum_control);
+        let fs = fs.max(&minimum_control);
+        let from_fa = (Real::from(360_u16) / fa).unwrap_or_else(|_| Real::from(5_u8));
 
         let fragments = r.map_or_else(
-            || 360.0 / fa,
+            || from_fa.clone(),
             |radius| {
-                if radius.abs() < 1e-9 {
-                    3.0
+                if radius == &Real::zero() {
+                    Real::from(3_u8)
                 } else {
-                    let from_fa = 360.0 / fa;
-                    let from_fs = (radius * 2.0 * std::f64::consts::PI) / fs;
-                    f64::min(from_fa, from_fs)
+                    let circumference = radius.abs() * Real::from(2_u8) * Real::pi();
+                    let from_fs = (circumference / fs).unwrap_or_else(|_| Real::from(5_u8));
+                    from_fa.min(&from_fs).clone()
                 }
             },
         );
 
-        f64::ceil(fragments.max(5.0)) as usize
+        let minimum_fragments = Real::from(5_u8);
+        let fragments = fragments.max(&minimum_fragments);
+        fragments
+            .ceil_certified()
+            .ok()
+            .and_then(|integer| usize::try_from(integer).ok())
+            .unwrap_or(5)
     }
 
     pub fn eval_source_file(&mut self, source_file: &SourceFile) -> Vec<(Shape, Option<[f32; 3]>)> {
@@ -436,7 +448,7 @@ impl Evaluator {
             .push(vec![None; call_site_children.len()]);
         self.variables.insert(
             "$children".into(),
-            Value::Number(call_site_children.len() as f64),
+            Value::Number(Self::real_from_usize(call_site_children.len())),
         );
 
         let mut pos_idx = 0;
@@ -481,7 +493,7 @@ impl Evaluator {
             .push(vec![None; call_site_children.len()]);
         self.variables.insert(
             "$children".into(),
-            Value::Number(call_site_children.len() as f64),
+            Value::Number(Self::real_from_usize(call_site_children.len())),
         );
 
         let mut pos_idx = 0;
@@ -669,10 +681,6 @@ impl Evaluator {
         Self::get_named_arg(args, name).or_else(|| Self::get_positional_arg(args, pos))
     }
 
-    pub fn get_arg_number(args: &[(Option<String>, Value)], name: &str, pos: usize) -> Option<f64> {
-        Self::get_arg(args, name, pos).and_then(Value::as_number)
-    }
-
     pub fn get_arg_real(args: &[(Option<String>, Value)], name: &str, pos: usize) -> Option<Real> {
         Self::get_arg(args, name, pos).and_then(Value::as_real)
     }
@@ -737,16 +745,12 @@ impl Evaluator {
         shapes
     }
 
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn eval_children_instantiation(&mut self, args: &[(Option<String>, Value)]) -> Vec<Shape> {
-        let indices = if let Some(index) = Self::get_arg_number(args, "index", 0) {
-            if !index.is_finite() || index < 0.0 || index.fract() != 0.0 {
-                Vec::new()
-            } else {
-                vec![index as usize]
-            }
-        } else {
-            (0..self.children_stack.last().map_or(0, Vec::len)).collect()
+        let indices = match Self::get_arg(args, "index", 0) {
+            Some(value) => value
+                .to_usize_exact()
+                .map_or_else(Vec::new, |index| vec![index]),
+            None => (0..self.children_stack.last().map_or(0, Vec::len)).collect(),
         };
         indices
             .into_iter()

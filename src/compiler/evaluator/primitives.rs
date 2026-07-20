@@ -5,21 +5,12 @@ use csgrs::mesh::Mesh as CsgMesh;
 use csgrs::mesh::Polygon;
 use csgrs::vertex::Vertex;
 use hyperlattice::{Point3, Vector3};
-use nalgebra::Vector3 as NalgebraVector3;
 
 use super::{Evaluator, Value};
 use crate::compiler::geometry::Shape;
 use crate::compiler::rendering::fonts::{
     apply_text_alignment, render_text_with_direction, resolve_font_data,
 };
-
-fn to_real(value: f64) -> Real {
-    Real::try_from(value).ok().unwrap_or_else(Real::zero)
-}
-
-fn nalgebra_vector_to_profile_normal(vector: &NalgebraVector3<f64>) -> Vector3 {
-    Vector3::new([to_real(vector[0]), to_real(vector[1]), to_real(vector[2])])
-}
 
 fn point_from_real(point: &[Real; 3]) -> Point3 {
     Point3::new(point[0].clone(), point[1].clone(), point[2].clone())
@@ -28,11 +19,12 @@ fn point_from_real(point: &[Real; 3]) -> Point3 {
 impl Evaluator {
     #[allow(clippy::unused_self)]
     pub fn eval_cube(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
-        let size_val = Self::get_arg(args, "size", 0).unwrap_or(&Value::Number(1.0));
+        let default_size = Value::Number(Real::one());
+        let size_val = Self::get_arg(args, "size", 0).unwrap_or(&default_size);
         let center = Self::get_arg_bool(args, "center", 1, false);
 
         let mesh = match size_val {
-            Value::Number(_) | Value::Exact(_) => {
+            Value::Number(_) => {
                 let m = CsgMesh::cube(size_val.as_real()?, ());
                 if center { m.center() } else { m }
             }
@@ -59,10 +51,10 @@ impl Evaluator {
     #[must_use]
     pub fn eval_sphere(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
         let r = Self::get_arg_real(args, "r", 0)
-            .or_else(|| Self::get_arg_real(args, "d", 0).and_then(|d| (d / 2.0).ok()))
+            .or_else(|| Self::get_arg_real(args, "d", 0).and_then(|d| (d / Real::from(2_u8)).ok()))
             .unwrap_or_else(Real::one);
 
-        let slices = self.resolve_fn_with_radius(args, r.to_f64_lossy());
+        let slices = self.resolve_fn_with_radius(args, Some(&r));
         let stacks = slices / 2;
 
         Some(Shape::from_csg_mesh(CsgMesh::sphere(r, slices, stacks, ())))
@@ -75,7 +67,7 @@ impl Evaluator {
             .unwrap_or_else(Real::one);
 
         // Diameter arguments take precedence over their radius equivalents.
-        let half = |d: Real| (d / 2.0).ok();
+        let half = |d: Real| (d / Real::from(2_u8)).ok();
         let r1 = Self::get_arg_real(args, "r1", 99)
             .or_else(|| Self::get_arg_real(args, "d1", 99).and_then(half))
             .or_else(|| Self::get_arg_real(args, "r", 1))
@@ -87,8 +79,8 @@ impl Evaluator {
 
         let center = Self::get_arg_bool(args, "center", 99, false);
         // Tessellation follows the larger endpoint radius.
-        let max_radius = r1.max(&r2).to_f64_lossy();
-        let slices = self.resolve_fn_with_radius(args, max_radius);
+        let max_radius = r1.max(&r2);
+        let slices = self.resolve_fn_with_radius(args, Some(max_radius));
 
         // `frustum` handles zero-radius cone tips without degenerate quads.
         let m = if r1 == r2 {
@@ -130,8 +122,10 @@ impl Evaluator {
             .as_list()?
             .iter()
             .filter_map(|v| {
-                let nums = v.to_number_list()?;
-                Some(nums.iter().map(|n| *n as usize).collect())
+                v.as_list()?
+                    .iter()
+                    .map(Value::to_usize_exact)
+                    .collect::<Option<Vec<_>>>()
             })
             .collect();
 
@@ -167,18 +161,13 @@ impl Evaluator {
             if pts.len() < 3 {
                 continue;
             }
-            let approximate = |point: &[Real; 3]| {
-                NalgebraVector3::new(
-                    point[0].to_f64_lossy().unwrap_or(0.0),
-                    point[1].to_f64_lossy().unwrap_or(0.0),
-                    point[2].to_f64_lossy().unwrap_or(0.0),
-                )
+            let edge = |from: &[Real; 3], to: &[Real; 3]| {
+                Vector3::new([&to[0] - &from[0], &to[1] - &from[1], &to[2] - &from[2]])
             };
-            let v0 = approximate(pts[0]);
-            let v1 = approximate(pts[1]);
-            let v2 = approximate(pts[2]);
-            let normal =
-                nalgebra_vector_to_profile_normal(&(v1 - v0).cross(&(v2 - v0)).normalize());
+            let normal = edge(pts[0], pts[1])
+                .cross(&edge(pts[0], pts[2]))
+                .normalize()
+                .unwrap_or_else(|_| Vector3::zero());
 
             if pts.len() == 3 {
                 let verts: Vec<_> = pts
@@ -211,20 +200,21 @@ impl Evaluator {
     #[must_use]
     pub fn eval_circle(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
         let r = Self::get_arg_real(args, "r", 0)
-            .or_else(|| Self::get_arg_real(args, "d", 0).and_then(|d| (d / 2.0).ok()))
+            .or_else(|| Self::get_arg_real(args, "d", 0).and_then(|d| (d / Real::from(2_u8)).ok()))
             .unwrap_or_else(Real::one);
 
-        let slices = self.resolve_fn_with_radius(args, r.to_f64_lossy());
+        let slices = self.resolve_fn_with_radius(args, Some(&r));
         Some(Shape::Sketch2D(Profile::circle(r, slices)))
     }
 
     #[allow(clippy::unused_self)]
     pub fn eval_square(&self, args: &[(Option<String>, Value)]) -> Option<Shape> {
-        let size_val = Self::get_arg(args, "size", 0).unwrap_or(&Value::Number(1.0));
+        let default_size = Value::Number(Real::one());
+        let size_val = Self::get_arg(args, "size", 0).unwrap_or(&default_size);
         let center = Self::get_arg_bool(args, "center", 1, false);
 
         let sketch = match size_val {
-            Value::Number(_) | Value::Exact(_) => Profile::square(size_val.as_real()?),
+            Value::Number(_) => Profile::square(size_val.as_real()?),
             Value::List(dims) => {
                 let nums: Vec<Real> = dims.iter().filter_map(Value::as_real).collect();
                 let w = nums.first().cloned().unwrap_or_else(Real::one);
@@ -268,7 +258,6 @@ impl Evaluator {
         let text_str = match Self::get_arg(args, "text", 0) {
             Some(Value::String(s)) => s.clone(),
             Some(Value::Number(n)) => format!("{n}"),
-            Some(Value::Exact(n)) => format!("{n}"),
             _ => return None,
         };
 
@@ -276,8 +265,8 @@ impl Evaluator {
             return None;
         }
 
-        let size = Self::get_arg_number(args, "size", 1).unwrap_or(10.0);
-        let spacing_val = Self::get_arg_number(args, "spacing", 5).unwrap_or(1.0);
+        let size = Self::get_arg_real(args, "size", 1).unwrap_or_else(|| Real::from(10_u8));
+        let spacing_val = Self::get_arg_real(args, "spacing", 5).unwrap_or_else(Real::one);
 
         // Prefer the requested system font, then bundled Liberation Sans.
         let font_param = match Self::get_arg(args, "font", 2) {
@@ -292,7 +281,7 @@ impl Evaluator {
         };
 
         let sketch =
-            render_text_with_direction(&text_str, &font_data, size, spacing_val, &direction);
+            render_text_with_direction(&text_str, &font_data, &size, &spacing_val, &direction);
 
         let halign = match Self::get_arg(args, "halign", 3) {
             Some(Value::String(s)) => s.clone(),

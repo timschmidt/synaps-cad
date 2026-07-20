@@ -24,7 +24,7 @@ fn time_phases(code: &str, fn_override: u32) -> PhaseTimes {
     if fn_override > 0 {
         evaluator.variables.insert(
             "$fn".into(),
-            synaps_cad::compiler::evaluator::value::Value::Number(f64::from(fn_override)),
+            synaps_cad::compiler::evaluator::value::Value::Number(Real::from(fn_override)),
         );
     }
     let shapes = evaluator.eval_source_file(&source);
@@ -38,10 +38,13 @@ fn time_phases(code: &str, fn_override: u32) -> PhaseTimes {
                 synaps_cad::compiler::geometry::conversions::csg_mesh_to_mesh_data(&mesh).ok()
             }
             Shape::Sketch2D(sketch) => {
-                synaps_cad::compiler::geometry::conversions::csg_mesh_to_mesh_data(&sketch.extrude(
-                    Real::try_from(0.01).expect("finite benchmark thickness"),
-                    (),
-                ))
+                synaps_cad::compiler::geometry::conversions::csg_mesh_to_mesh_data(
+                    &sketch.extrude(
+                        (Real::one() / Real::from(100_u8))
+                            .expect("nonzero benchmark thickness denominator"),
+                        (),
+                    ),
+                )
                 .ok()
             }
             Shape::Failed(_) => None,

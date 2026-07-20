@@ -31,3 +31,4 @@ runs:
         checkout_repo hypersdf https://github.com/timschmidt/hypersdf.git 8340677f934ff44bb1ed91e37193ca719dddcd43
         checkout_repo hypersolve https://github.com/timschmidt/hypersolve.git 3d0f25eb107a739b3e6ee947f9772608c2a5ad17
         checkout_repo hypertri https://github.com/timschmidt/hypertriangulate.git 2f9b27222e2108ceffe7e2a9cf669c3c3e63a5e0
+        checkout_repo openscad-rs https://github.com/timschmidt/openscad-rs.git 695af0746d8df284a7c7976e5664f4aa35f6a32a

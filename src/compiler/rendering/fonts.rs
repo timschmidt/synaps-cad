@@ -118,52 +118,37 @@ fn search_font_dir(
     None
 }
 
-/// Applies `OpenSCAD` horizontal and vertical alignment to a text profile.
-fn to_real(value: f64) -> Real {
-    Real::try_from(value).ok().unwrap_or_else(Real::zero)
-}
-
 pub fn apply_text_alignment(sketch: Profile, halign: &str, valign: &str) -> Profile {
-    let tris = sketch.triangulate();
-    if tris.is_empty() {
+    if sketch.is_empty() {
         return sketch;
     }
 
-    let mut min_x = f64::MAX;
-    let mut max_x = f64::MIN;
-    let mut min_y = f64::MAX;
-    let mut max_y = f64::MIN;
-    for tri in &tris {
-        for pt in tri {
-            let x = pt.x.to_f64_lossy().unwrap_or(0.0);
-            let y = pt.y.to_f64_lossy().unwrap_or(0.0);
-            min_x = min_x.min(x);
-            max_x = max_x.max(x);
-            min_y = min_y.min(y);
-            max_y = max_y.max(y);
-        }
-    }
-
-    let width = max_x - min_x;
-    let height = max_y - min_y;
+    let bounds = sketch.bounding_box();
+    let min_x = bounds.mins.x;
+    let max_x = bounds.maxs.x;
+    let min_y = bounds.mins.y;
+    let max_y = bounds.maxs.y;
+    let width = &max_x - &min_x;
+    let height = &max_y - &min_y;
+    let two = Real::from(2_u8);
 
     let dx = match halign {
-        "center" => -(min_x + width / 2.0),
+        "center" => -(min_x + (width / &two).unwrap_or_else(|_| Real::zero())),
         "right" => -max_x,
-        _ => 0.0,
+        _ => Real::zero(),
     };
 
     let dy = match valign {
-        "center" => -(min_y + height / 2.0),
+        "center" => -(min_y + (height / two).unwrap_or_else(|_| Real::zero())),
         "top" => -max_y,
         "bottom" => -min_y,
-        _ => 0.0,
+        _ => Real::zero(),
     };
 
-    if dx.abs() < 1e-12 && dy.abs() < 1e-12 {
+    if dx == Real::zero() && dy == Real::zero() {
         sketch
     } else {
-        sketch.translate(to_real(dx), to_real(dy), Real::zero())
+        sketch.translate(dx, dy, Real::zero())
     }
 }
 
@@ -171,8 +156,8 @@ pub fn apply_text_alignment(sketch: Profile, halign: &str, valign: &str) -> Prof
 pub fn render_text_with_direction(
     text: &str,
     font_data: &[u8],
-    size: f64,
-    spacing: f64,
+    size: &Real,
+    spacing: &Real,
     direction: &str,
 ) -> Profile {
     // OpenSCAD accepts ltr, rtl, ttb, and btt and dispatches on the first
@@ -188,11 +173,15 @@ pub fn render_text_with_direction(
         return Profile::new();
     };
 
-    let upem = f64::from(face.units_per_em());
+    let upem = Real::from(face.units_per_em());
     // Match OpenSCAD's 100-DPI FreeType sizing against csgrs's point-to-mm
     // scale. The correction is exact for the common 2048-unit em square.
-    let corrected_size = size * 100.0 / (72.0 * 0.352_777_7);
-    let font_scale = size * 100.0 / (72.0 * upem);
+    let points_per_millimeter =
+        (Real::from(3_527_777_u64) / Real::from(10_000_000_u64)).unwrap_or_else(|_| Real::zero());
+    let corrected_size = (size * Real::from(100_u8) / (Real::from(72_u8) * points_per_millimeter))
+        .unwrap_or_else(|_| Real::zero());
+    let font_scale =
+        (size * Real::from(100_u8) / (Real::from(72_u8) * upem)).unwrap_or_else(|_| Real::zero());
 
     // OS/2 typographic metrics most closely match OpenSCAD/Qt vertical layout;
     // hhea metrics provide the portable fallback.
@@ -200,10 +189,10 @@ pub fn render_text_with_direction(
         || (face.ascender(), face.descender()),
         |os2| (os2.typographic_ascender(), os2.typographic_descender()),
     );
-    let ascender = f64::from(ascender) * font_scale;
-    let descender = f64::from(descender) * font_scale;
+    let ascender = Real::from(ascender) * &font_scale;
+    let descender = Real::from(descender) * &font_scale;
     // OpenSCAD applies `spacing` to vertical line height, not glyph advance.
-    let line_height = (ascender - descender) * spacing;
+    let line_height = (&ascender - &descender) * spacing;
 
     let is_vertical = dir == "ttb" || dir == "btt";
 
@@ -216,17 +205,18 @@ pub fn render_text_with_direction(
     };
 
     let mut combined: Option<Profile> = None;
-    let mut cursor = 0.0_f64;
+    let mut cursor = Real::zero();
 
     for ch in &chars {
         if ch.is_control() {
             continue;
         }
 
-        let advance = face.glyph_index(*ch).map_or(size * 0.25, |gid| {
-            face.glyph_hor_advance(gid)
-                .map_or(size * 0.25, |a| f64::from(a) * font_scale)
-        });
+        let fallback_advance = (size / Real::from(4_u8)).unwrap_or_else(|_| Real::zero());
+        let advance = face
+            .glyph_index(*ch)
+            .and_then(|gid| face.glyph_hor_advance(gid))
+            .map_or(fallback_advance, |value| Real::from(value) * &font_scale);
 
         // Spaces advance the cursor without producing an outline.
         let has_outline = face
@@ -249,17 +239,17 @@ pub fn render_text_with_direction(
             .is_some();
 
         if has_outline {
-            let glyph = Profile::text(&ch.to_string(), font_data, to_real(corrected_size));
+            let glyph = Profile::text(&ch.to_string(), font_data, corrected_size.clone());
             let positioned = if is_vertical {
                 // Vertical text extends down from the ascent line and centers
                 // each glyph on the text axis.
                 glyph.translate(
-                    to_real(-advance / 2.0),
-                    to_real(-(cursor + ascender)),
+                    -(advance.clone() / Real::from(2_u8)).unwrap_or_else(|_| Real::zero()),
+                    -(&cursor + &ascender),
                     Real::zero(),
                 )
             } else {
-                glyph.translate(to_real(cursor), Real::zero(), Real::zero())
+                glyph.translate(cursor.clone(), Real::zero(), Real::zero())
             };
 
             combined = Some(match combined {
@@ -269,7 +259,7 @@ pub fn render_text_with_direction(
         }
 
         if is_vertical {
-            cursor += line_height;
+            cursor += &line_height;
         } else {
             cursor += advance;
         }

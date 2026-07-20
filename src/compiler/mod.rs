@@ -2,8 +2,9 @@ use csgrs::Real;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-fn to_real(value: f64) -> Real {
-    Real::try_from(value).ok().unwrap_or_else(Real::zero)
+fn sketch_preview_thickness() -> Real {
+    (Real::one() / Real::from(100_u8))
+        .expect("the exact sketch preview thickness denominator is nonzero")
 }
 
 pub mod evaluator;
@@ -63,11 +64,11 @@ module view_castle() {
 module view_exact() {
     // Repeating rational dimensions are retained exactly rather than rounded.
     color("deepskyblue")
-        cube([exact("20/3"), exact("25/7"), exact("13/2")]);
+        cube([20/3, 25/7, 13/2]);
     // Symbolic pi remains exact through placement and sphere construction.
     color("gold")
-        translate([exact("40/3"), 0, exact("pi")])
-            sphere(r = exact("pi"));
+        translate([40/3, 0, PI])
+            sphere(r = PI);
 }
 
 // Combined scene
@@ -105,7 +106,7 @@ pub fn compile_scad_code(
     if fn_override > 0 {
         evaluator.variables.insert(
             "$fn".into(),
-            evaluator::value::Value::Number(f64::from(fn_override)),
+            evaluator::value::Value::Number(Real::from(fn_override)),
         );
     }
     let shapes = evaluator.eval_source_file(&source_file);
@@ -134,7 +135,7 @@ pub fn compile_scad_code(
             geometry::Shape::Sketch2D(sketch) => {
                 // Preview bare 2D shapes as thin solids.
                 match geometry::conversions::csg_mesh_to_mesh_data(
-                    &sketch.extrude(to_real(0.01), ()),
+                    &sketch.extrude(sketch_preview_thickness(), ()),
                 ) {
                     Ok(m) => m,
                     Err(error) => {

@@ -51,7 +51,7 @@ xattr -rd com.apple.quarantine /path/to/SynapsCAD.app
 ```rust
 use synaps_cad::compiler::{CompilationResult, compile_scad_code};
 
-match compile_scad_code("color(\"gold\") sphere(r = exact(\"5/3\"));", 32, None) {
+match compile_scad_code("color(\"gold\") sphere(r = 5/3);", 32, None) {
     CompilationResult::Success { parts, views, warnings } => {
         println!("{} meshes, {} previews", parts.len(), views.len());
         for warning in warnings {
@@ -68,7 +68,7 @@ The principal API types and functions are:
 - `CompilationResult`, which distinguishes success, failure, and cancellation.
 - `MeshData`, an indexed triangle mesh in Bevy's Y-up coordinate system, and `ViewImage`, a labeled base64-encoded PNG preview.
 - `compile_views_only`, a convenience wrapper for callers that need previews but not meshes or recoverable warnings.
-- `Evaluator` and `Value`, the lower-level OpenSCAD evaluator and its ordinary or exact runtime values.
+- `Evaluator` and `Value`, the lower-level OpenSCAD evaluator and its Hyperreal runtime values.
 - `render_orthographic_views`, which renders previews from existing `MeshData` values.
 - `DEFAULT_SCAD_CODE`, the scene loaded by a new application workspace.
 
@@ -76,18 +76,18 @@ The crate is not yet published, so downstream users should currently use a Git o
 
 Build the local API documentation with `cargo doc --no-deps --open`.
 
-## Exact numbers
+## Hyperreal numbers
 
-SynapsCAD extends OpenSCAD expressions with `exact()`. Pass a string to construct a rational or symbolic Hyperreal without first rounding through `f64`:
+Every OpenSCAD numeric literal is parsed directly into `hyperreal::Real`; there is no intermediate `f64` conversion. Decimal and scientific literals, fractions, arithmetic, and math functions therefore retain exact rational or symbolic structure automatically:
 
 ```openscad
-third = exact("1/3");
+third = 1/3;
 
-translate([cos(exact("60")), sin(exact("30")), exact("pi")])
-    cube([third, exact("2/5"), exact("3/7")]);
+translate([cos(60), sin(30), PI])
+    cube([third, 2/5, 3/7]);
 ```
 
-Strings may contain integers, decimals, fractions, or the symbolic constants `"pi"`, `"tau"`, and `"e"`. Arithmetic, degree-based trigonometry, vectors, primitive dimensions, polygons, polyhedra, affine transformations, offsets, and extrusion parameters preserve exact values through the `csgrs` pipeline. Passing an ordinary numeric expression to `exact()` preserves its already-parsed binary value; use a string when the source's decimal or rational meaning must remain exact.
+`PI` is Hyperreal's symbolic π. The standard degree-based trigonometric functions, inverse trigonometry, roots, exponentials, logarithms, powers, rounding, vector functions, primitive dimensions, polygons, polyhedra, text metrics, affine transformations, offsets, and extrusion parameters all operate on `Real` values. Primitive-float approximation is deferred to explicit display-color, mesh-buffer, export, and third-party file-format boundaries.
 
 ## Architecture
 

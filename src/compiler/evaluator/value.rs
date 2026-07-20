@@ -1,43 +1,66 @@
 use csgrs::Real;
 
+pub(crate) fn reals_equal(left: &Real, right: &Real) -> bool {
+    left.certified_eq_until(right, Real::PARTIAL_CMP_MIN_PRECISION)
+        .as_bool()
+        .unwrap_or(false)
+}
+
 /// Runtime value produced by the `OpenSCAD` expression evaluator.
 #[derive(Debug, Clone)]
 pub enum Value {
-    /// Ordinary binary floating-point number.
-    Number(f64),
-    /// Exact rational or symbolic Hyper number.
-    Exact(Real),
+    /// Exact rational, symbolic, or computable real number.
+    Number(Real),
     /// Boolean value.
     Bool(bool),
     /// `OpenSCAD` vector or list.
     List(Vec<Self>),
     /// UTF-8 string.
     String(String),
-    /// Inclusive `(start, end, step)` numeric range.
-    Range(f64, f64, f64),
+    /// Inclusive `(start, end, step)` exact-real range.
+    Range(Real, Real, Real),
     /// Undefined value.
     Undef,
 }
 
 impl Value {
-    /// Returns a lossy primitive approximation for either numeric variant.
+    /// Returns the exact-real numeric value.
     #[must_use]
-    pub fn as_number(&self) -> Option<f64> {
+    pub fn as_real(&self) -> Option<Real> {
         match self {
-            Self::Number(n) => Some(*n),
-            Self::Exact(n) => n.to_f64_lossy(),
+            Self::Number(n) => Some(n.clone()),
             _ => None,
         }
     }
 
-    /// Returns an exact representation for either numeric variant.
+    /// Returns a lossy primitive approximation at an explicit interoperability boundary.
     #[must_use]
-    pub fn as_real(&self) -> Option<Real> {
+    pub fn to_f64_lossy(&self) -> Option<f64> {
         match self {
-            Self::Number(n) => Real::try_from(*n).ok(),
-            Self::Exact(n) => Some(n.clone()),
+            Self::Number(n) => n.to_f64_lossy(),
             _ => None,
         }
+    }
+
+    /// Returns a nonnegative exact integer as `usize` for indexing/count APIs.
+    #[must_use]
+    pub fn to_usize_exact(&self) -> Option<usize> {
+        let integer = self.as_real()?.exact_rational()?.to_big_integer()?;
+        usize::try_from(integer).ok()
+    }
+
+    /// Returns a nonnegative exact integer as `u64` for deterministic seeds.
+    #[must_use]
+    pub fn to_u64_exact(&self) -> Option<u64> {
+        let integer = self.as_real()?.exact_rational()?.to_big_integer()?;
+        u64::try_from(integer).ok()
+    }
+
+    /// Returns a nonnegative exact integer as `u32` for character conversion.
+    #[must_use]
+    pub fn to_u32_exact(&self) -> Option<u32> {
+        let integer = self.as_real()?.exact_rational()?.to_big_integer()?;
+        u32::try_from(integer).ok()
     }
 
     /// Applies `OpenSCAD` truthiness rules.
@@ -45,8 +68,7 @@ impl Value {
     pub fn as_bool(&self) -> bool {
         match self {
             Self::Bool(b) => *b,
-            Self::Number(n) => *n != 0.0,
-            Self::Exact(n) => n != &Real::zero(),
+            Self::Number(n) => !reals_equal(n, &Real::zero()),
             Self::String(s) => !s.is_empty(),
             Self::List(l) => !l.is_empty(),
             Self::Undef => false,
@@ -63,13 +85,6 @@ impl Value {
         }
     }
 
-    /// Converts the list elements that are numeric to primitive approximations.
-    #[must_use]
-    pub fn to_number_list(&self) -> Option<Vec<f64>> {
-        self.as_list()
-            .map(|l| l.iter().filter_map(Self::as_number).collect())
-    }
-
     /// Converts the list elements that are numeric to exact values.
     #[must_use]
     pub fn to_real_list(&self) -> Option<Vec<Real>> {
@@ -83,18 +98,16 @@ impl Value {
         match self {
             Self::Range(from, to, step) => {
                 let mut vals = Vec::new();
-                let mut v = *from;
-                if *step > 0.0 {
-                    #[allow(clippy::while_float)]
-                    while v <= *to + 1e-12 {
-                        vals.push(Self::Number(v));
-                        v += step;
+                let mut value = from.clone();
+                if step > &Real::zero() {
+                    while value <= *to {
+                        vals.push(Self::Number(value.clone()));
+                        value += step;
                     }
-                } else if *step < 0.0 {
-                    #[allow(clippy::while_float)]
-                    while v >= *to - 1e-12 {
-                        vals.push(Self::Number(v));
-                        v += step;
+                } else if step < &Real::zero() {
+                    while value >= *to {
+                        vals.push(Self::Number(value.clone()));
+                        value += step;
                     }
                 }
                 vals

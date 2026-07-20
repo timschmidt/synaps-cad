@@ -22,13 +22,15 @@ reqwest = { version = "0.13", features = ["json"] }
 # corresponding crates.io dependency below.
 csgrs = { path = "../csgrs", features = ["offset"] }
 # csgrs = { version = "0.23.0", features = ["offset"] }
-nalgebra = "0.34"
 hyperlattice = { path = "../hyperlattice" }
 hyperreal = { path = "../hyperreal", optional = true, features = ["dispatch-trace"] }
 url = "2"
 web-time = "1"
 
-openscad-rs = "0.1.0"
+# Use the sibling parser while exact-Real literals are developed; releases can
+# switch to the corresponding crates.io version below.
+openscad-rs = { path = "../openscad-rs" }
+# openscad-rs = "0.1.0"
 rfd = "0.17.2"
 ttf-parser = "0.25"
 
