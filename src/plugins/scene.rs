@@ -50,15 +50,9 @@ impl Default for GizmoVisibility {
 }
 
 /// Visibility state for part labels (@1, @2, ...).
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct LabelVisibility {
     pub visible: bool,
-}
-
-impl Default for LabelVisibility {
-    fn default() -> Self {
-        Self { visible: true }
-    }
 }
 
 impl Plugin for ScenePlugin {

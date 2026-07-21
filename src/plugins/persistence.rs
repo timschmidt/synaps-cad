@@ -66,16 +66,10 @@ struct PersistentData {
     parts: std::collections::HashMap<String, String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 struct UiSettings {
-    #[serde(default = "default_true")]
+    #[serde(default)]
     show_labels: bool,
-}
-
-impl Default for UiSettings {
-    fn default() -> Self {
-        Self { show_labels: true }
-    }
 }
 
 const fn default_true() -> bool {
@@ -403,6 +397,7 @@ mod tests {
         let saved: PersistentData = serde_json::from_value(legacy_session()).unwrap();
 
         assert!(saved.send_images);
+        assert!(!saved.ui.show_labels);
     }
 
     #[test]
