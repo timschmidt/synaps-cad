@@ -76,12 +76,17 @@ pub struct StlMeshData {
     pub color: Option<[f32; 3]>,
 }
 
+pub type ModelView = (String, String);
+pub type AlternateModelView = (String, Vec<ModelView>);
+
 pub enum CompilationResult {
     Success {
+        /// Hash of the source and render settings that produced this result.
+        source_hash: [u8; 32],
         parts: Vec<StlMeshData>,
-        views: Vec<(String, String)>, // (label, base64_png)
+        views: Vec<ModelView>, // (label, base64_png)
         /// Views for non-active `$view` branches.
-        other_views: Vec<(String, Vec<(String, String)>)>,
+        other_views: Vec<AlternateModelView>,
         warnings: Vec<String>,
     },
     Error(String),
@@ -114,10 +119,71 @@ impl Default for CompilationState {
 /// Rendered orthographic views of the model (for AI context).
 #[derive(Resource, Default)]
 pub struct ModelViews {
-    pub views: Vec<(String, String)>, // (label, base64_png) for active view
+    /// Hash of the source and render settings that produced these images.
+    pub source_hash: Option<[u8; 32]>,
+    pub views: Vec<ModelView>, // (label, base64_png) for active view
     /// Views rendered for non-active `$view` branches (smaller resolution).
     /// Each entry is (`view_name`, Vec<(label, `base64_png`)>).
-    pub other_views: Vec<(String, Vec<(String, String)>)>,
+    pub other_views: Vec<AlternateModelView>,
+}
+
+impl ModelViews {
+    /// Remove rendered AI context as soon as its compilation inputs change.
+    pub fn invalidate(&mut self) {
+        self.source_hash = None;
+        self.views.clear();
+        self.other_views.clear();
+    }
+
+    /// Return whether these views were rendered from the current compilation inputs.
+    pub fn matches_source(&self, code: &str, fn_value: u32) -> bool {
+        self.source_hash == Some(model_source_hash(code, fn_value))
+    }
+}
+
+/// Hash every input that affects rendered model views.
+pub fn model_source_hash(code: &str, fn_value: u32) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"synaps-cad-model-views-v1\0");
+    hasher.update(&fn_value.to_le_bytes());
+    hasher.update(code.as_bytes());
+    *hasher.finalize().as_bytes()
+}
+
+#[cfg(test)]
+mod model_view_cache_tests {
+    use super::*;
+
+    fn populated_views(code: &str, fn_value: u32) -> ModelViews {
+        ModelViews {
+            source_hash: Some(model_source_hash(code, fn_value)),
+            views: vec![("Iso".into(), "image-data".into())],
+            other_views: vec![(
+                "detail".into(),
+                vec![("Front".into(), "other-image-data".into())],
+            )],
+        }
+    }
+
+    #[test]
+    fn model_views_match_only_their_exact_compilation_inputs() {
+        let views = populated_views("cube(10);", 16);
+
+        assert!(views.matches_source("cube(10);", 16));
+        assert!(!views.matches_source("cube(11);", 16));
+        assert!(!views.matches_source("cube(10);", 32));
+    }
+
+    #[test]
+    fn invalidation_clears_hash_and_all_images() {
+        let mut views = populated_views("cube(10);", 16);
+
+        views.invalidate();
+
+        assert_eq!(views.source_hash, None);
+        assert!(views.views.is_empty());
+        assert!(views.other_views.is_empty());
+    }
 }
 
 /// Cached copy of last compiled mesh data for re-rendering views with markers.
@@ -175,10 +241,14 @@ struct CompilationSystemSet;
 fn trigger_compilation_system(
     mut scad_code: ResMut<ScadCode>,
     mut compilation_state: ResMut<CompilationState>,
+    mut model_views: ResMut<ModelViews>,
 ) {
     if !scad_code.dirty {
         return;
     }
+
+    // Never expose views rendered from previous source while compilation is pending.
+    model_views.invalidate();
 
     // Supersede a running compilation so the latest source can start immediately.
     if compilation_state.is_compiling {
@@ -234,6 +304,7 @@ fn compile_openscad(
     // An empty document intentionally clears the viewport.
     if code.trim().is_empty() {
         return CompilationResult::Success {
+            source_hash: model_source_hash(code, fn_value),
             parts: Vec::new(),
             views: Vec::new(),
             other_views: Vec::new(),
@@ -320,6 +391,7 @@ fn compile_openscad(
             }
 
             CompilationResult::Success {
+                source_hash: model_source_hash(code, fn_value),
                 parts: parts
                     .into_iter()
                     .map(|m| StlMeshData {
@@ -395,6 +467,7 @@ fn poll_compilation_system(
 
     match result {
         CompilationResult::Success {
+            source_hash,
             parts,
             views,
             other_views,
@@ -424,6 +497,7 @@ fn poll_compilation_system(
                 });
             }
 
+            model_views.source_hash = Some(source_hash);
             model_views.views = views;
             model_views.other_views = other_views;
             last_compiled.parts.clone_from(&parts);

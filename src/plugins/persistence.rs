@@ -41,6 +41,9 @@ struct PersistentData {
     adapter_name: String,
     model_name: String,
     temperature: f64,
+    /// Whether rendered model views are sent as automatic AI context.
+    #[serde(default = "default_true")]
+    send_images: bool,
     editor_code: String,
     #[serde(default = "default_verification_rounds")]
     max_verification_rounds: u32,
@@ -151,6 +154,7 @@ fn load_session_system(
     ai_config.adapter_name = saved.adapter_name;
     ai_config.model_name = saved.model_name;
     ai_config.temperature = saved.temperature;
+    ai_config.send_images = saved.send_images;
     ai_config.max_verification_rounds = saved.max_verification_rounds;
 
     ai_config.api_keys = saved
@@ -284,7 +288,8 @@ fn save_on_change_system(
     scad_code: Res<ScadCode>,
 ) {
     let changed = (label_vis.is_changed() && !label_vis.is_added())
-        || (chat_state.is_changed() && !chat_state.is_added());
+        || (chat_state.is_changed() && !chat_state.is_added())
+        || (ai_config.is_changed() && !ai_config.is_added());
     if changed {
         *debounce = Some(2.0); // save 2 seconds after last change
     }
@@ -345,6 +350,7 @@ fn save_session(
         adapter_name: ai_config.adapter_name.clone(),
         model_name: ai_config.model_name.clone(),
         temperature: ai_config.temperature,
+        send_images: ai_config.send_images,
         editor_code: scad_code.text.clone(),
         max_verification_rounds: ai_config.max_verification_rounds,
         api_keys: ai_config.api_keys.clone(),
@@ -368,5 +374,44 @@ fn save_session(
             }
         }
         Err(e) => eprintln!("[SynapsCAD] Failed to serialize session: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn legacy_session() -> serde_json::Value {
+        json!({
+            "chat_messages": [],
+            "adapter_name": "OpenAI",
+            "model_name": "",
+            "temperature": 0.1,
+            "editor_code": "",
+            "api_keys": {},
+            "model_per_provider": {},
+            "custom_urls": {},
+            "ollama_host": "",
+            "ui": {},
+            "parts": {}
+        })
+    }
+
+    #[test]
+    fn legacy_sessions_enable_model_images_by_default() {
+        let saved: PersistentData = serde_json::from_value(legacy_session()).unwrap();
+
+        assert!(saved.send_images);
+    }
+
+    #[test]
+    fn sessions_preserve_disabled_model_images() {
+        let mut session = legacy_session();
+        session["send_images"] = json!(false);
+
+        let saved: PersistentData = serde_json::from_value(session).unwrap();
+
+        assert!(!saved.send_images);
     }
 }

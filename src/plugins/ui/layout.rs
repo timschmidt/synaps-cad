@@ -105,6 +105,10 @@ pub fn ui_layout_system(
                 &mut available_models,
                 &mut settings_open,
             );
+            ui.checkbox(&mut ai_config.send_images, "Send images")
+                .on_hover_text(
+                    "Send rendered model views to the AI. Explicitly attached images are always sent.",
+                );
             ui.separator();
 
             let no_model_selected = !ai_networking_available()

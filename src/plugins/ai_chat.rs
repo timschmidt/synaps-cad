@@ -180,6 +180,8 @@ pub struct AiConfig {
     /// Maximum automatic verification rounds (`u32::MAX` = unlimited).
     pub max_verification_rounds: u32,
     pub extended_thinking: bool,
+    /// Whether compiled model renders are included as automatic AI context.
+    pub send_images: bool,
 }
 
 impl AiConfig {
@@ -234,7 +236,24 @@ impl Default for AiConfig {
             temperature: 0.1,
             max_verification_rounds: 2,
             extended_thinking: false,
+            send_images: true,
         }
+    }
+}
+
+fn model_views_for_request<'a>(
+    model_views: &'a super::compilation::ModelViews,
+    current_code: &str,
+    fn_value: u32,
+    send_images: bool,
+) -> (
+    &'a [super::compilation::ModelView],
+    &'a [super::compilation::AlternateModelView],
+) {
+    if send_images && model_views.matches_source(current_code, fn_value) {
+        (&model_views.views, &model_views.other_views)
+    } else {
+        (&[], &[])
     }
 }
 
@@ -965,8 +984,14 @@ fn ai_send_system(
     let system_prompt = ai_config.system_prompt.clone();
     let temperature = ai_config.temperature;
     let extended_thinking = ai_config.extended_thinking;
-    let views = model_views.views.clone();
-    let other_views = model_views.other_views.clone();
+    let (views, other_views) = model_views_for_request(
+        &model_views,
+        &current_code,
+        scad_code.fn_value,
+        ai_config.send_images,
+    );
+    let views = views.to_vec();
+    let other_views = other_views.to_vec();
 
     let (tx, rx) = mpsc::channel();
     chat_state.stream_receiver = Some(Mutex::new(rx));
@@ -1361,8 +1386,14 @@ fn ai_send_system(
     let system_prompt = ai_config.system_prompt.clone();
     let temperature = ai_config.temperature;
     let extended_thinking = ai_config.extended_thinking;
-    let views = model_views.views.clone();
-    let other_views = model_views.other_views.clone();
+    let (views, other_views) = model_views_for_request(
+        &model_views,
+        &current_code,
+        scad_code.fn_value,
+        ai_config.send_images,
+    );
+    let views = views.to_vec();
+    let other_views = other_views.to_vec();
 
     let (tx, rx) = mpsc::channel();
     chat_state.stream_receiver = Some(Mutex::new(rx));
@@ -2415,6 +2446,53 @@ fn extract_openscad_code(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cached_model_views(code: &str, fn_value: u32) -> super::super::compilation::ModelViews {
+        super::super::compilation::ModelViews {
+            source_hash: Some(super::super::compilation::model_source_hash(code, fn_value)),
+            views: vec![("Iso".into(), "active-image".into())],
+            other_views: vec![(
+                "assembly".into(),
+                vec![("Front".into(), "inactive-image".into())],
+            )],
+        }
+    }
+
+    #[test]
+    fn request_uses_current_model_views_when_images_are_enabled() {
+        let cached = cached_model_views("cube(10);", 16);
+
+        let (views, other_views) = model_views_for_request(&cached, "cube(10);", 16, true);
+
+        assert_eq!(views.len(), 1);
+        assert_eq!(other_views.len(), 1);
+    }
+
+    #[test]
+    fn request_rejects_stale_model_views() {
+        let cached = cached_model_views("cube(10);", 16);
+
+        let (source_changed, _) = model_views_for_request(&cached, "sphere(10);", 16, true);
+        let (settings_changed, _) = model_views_for_request(&cached, "cube(10);", 32, true);
+
+        assert!(source_changed.is_empty());
+        assert!(settings_changed.is_empty());
+    }
+
+    #[test]
+    fn request_omits_current_model_views_when_images_are_disabled() {
+        let cached = cached_model_views("cube(10);", 16);
+
+        let (views, other_views) = model_views_for_request(&cached, "cube(10);", 16, false);
+
+        assert!(views.is_empty());
+        assert!(other_views.is_empty());
+    }
+
+    #[test]
+    fn images_are_enabled_by_default() {
+        assert!(AiConfig::default().send_images);
+    }
 
     #[test]
     fn test_parse_search_replace_single() {

@@ -199,6 +199,8 @@ if cfg!(debug_assertions) {
 
 The AI chat pipeline (`ai_chat.rs`) logs the full request (system prompt, messages, model) and response in debug mode.
 
+Rendered model views used as AI context are cached with a BLAKE3 hash of the exact editor source and `$fn` value. The cache is invalidated immediately when compilation inputs change, and request construction rejects views whose hash does not match the current inputs. The **Send images** checkbox controls these automatic model renders; explicitly attached chat images are unaffected.
+
 ## UI Conventions
 
 - **Hand cursor on hover**: All clickable/interactive widgets display a pointing-hand cursor. This is set globally via `style.interaction.interact_cursor` in `setup_egui_theme`. For custom widgets using `sense(Sense::click())`, explicitly add `.on_hover_cursor(egui::CursorIcon::PointingHand)`.
