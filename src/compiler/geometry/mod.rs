@@ -75,7 +75,10 @@ impl Shape {
             return Self::Failed(e.clone());
         }
         match (self, other) {
-            (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.union(&b)),
+            (Self::Sketch2D(a), Self::Sketch2D(b)) => match a.try_union(&b) {
+                Ok(profile) => Self::Sketch2D(profile),
+                Err(error) => Self::Failed(format!("exact 2D union failed: {error}")),
+            },
             (a, b) => csg_bool(a.into_csg_mesh(), b.into_csg_mesh(), BoolOp::Union),
         }
     }
@@ -89,7 +92,10 @@ impl Shape {
             return Self::Failed(e.clone());
         }
         match (self, other) {
-            (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.difference(&b)),
+            (Self::Sketch2D(a), Self::Sketch2D(b)) => match a.try_difference(&b) {
+                Ok(profile) => Self::Sketch2D(profile),
+                Err(error) => Self::Failed(format!("exact 2D difference failed: {error}")),
+            },
             (a, b) => csg_bool(a.into_csg_mesh(), b.into_csg_mesh(), BoolOp::Difference),
         }
     }
@@ -103,7 +109,10 @@ impl Shape {
             return Self::Failed(e.clone());
         }
         match (self, other) {
-            (Self::Sketch2D(a), Self::Sketch2D(b)) => Self::Sketch2D(a.intersection(&b)),
+            (Self::Sketch2D(a), Self::Sketch2D(b)) => match a.try_intersection(&b) {
+                Ok(profile) => Self::Sketch2D(profile),
+                Err(error) => Self::Failed(format!("exact 2D intersection failed: {error}")),
+            },
             (a, b) => csg_bool(a.into_csg_mesh(), b.into_csg_mesh(), BoolOp::Intersection),
         }
     }
@@ -237,3 +246,44 @@ fn csg_bool(lhs: CsgMesh<()>, rhs: CsgMesh<()>, op: BoolOp) -> Shape {
 }
 
 pub mod conversions;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hypercurve::{Curve2, CurvePath2, CurveRegion2, LineSeg2, Point2, QuadraticBezier2};
+
+    fn point(x: i64, y: i64) -> Point2 {
+        Point2::new(Real::from(x), Real::from(y))
+    }
+
+    #[test]
+    fn shape_keeps_curved_profiles_through_boolean_transform_and_meshing() {
+        let boundary = CurvePath2::try_new(vec![
+            Curve2::from(QuadraticBezier2::new(
+                point(-2, 4),
+                point(0, -4),
+                point(2, 4),
+            )),
+            Curve2::from(LineSeg2::try_new(point(2, 4), point(-2, 4)).unwrap()),
+        ])
+        .unwrap();
+        let curved = Shape::Sketch2D(Profile::from_curve_region(
+            CurveRegion2::try_from_boundary_paths(&[boundary]).unwrap(),
+        ));
+        let cutter = Shape::Sketch2D(Profile::rectangle(Real::from(6), Real::from(3)).translate(
+            Real::from(-3),
+            Real::from(2),
+            Real::zero(),
+        ));
+
+        let result = curved
+            .difference(cutter)
+            .scale(Real::from(2), Real::from(3), Real::one());
+        let Shape::Sketch2D(profile) = result else {
+            panic!("higher-order 2D operations should remain a sketch");
+        };
+
+        assert!(profile.as_curve_region().unwrap().has_algebraic_fragments());
+        assert!(!Shape::Sketch2D(profile).into_csg_mesh().polygons.is_empty());
+    }
+}

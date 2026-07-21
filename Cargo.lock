@@ -6347,6 +6347,7 @@ dependencies = [
  "dirs",
  "genai",
  "getrandom 0.3.4",
+ "hypercurve",
  "hyperlattice",
  "hyperreal",
  "image",

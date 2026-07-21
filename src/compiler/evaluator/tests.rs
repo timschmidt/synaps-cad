@@ -357,7 +357,11 @@ fn compile_to_csg_mesh(code: &str) -> CsgMesh<()> {
     let source_file = openscad_rs::parse(code).expect("parse error");
     let mut evaluator = Evaluator::new();
     let shapes = evaluator.eval_source_file(&source_file);
-    assert!(!shapes.is_empty(), "No geometry produced");
+    assert!(
+        !shapes.is_empty(),
+        "No geometry produced; warnings={:?}",
+        evaluator.warnings
+    );
     let mut iter = shapes.into_iter();
     let (first, _) = iter.next().unwrap();
     let mut result = first.into_csg_mesh();

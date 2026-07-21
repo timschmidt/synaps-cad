@@ -71,6 +71,9 @@ pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 too_many_lines = "allow"
 
+[dev-dependencies]
+hypercurve = { path = "../hypercurve" }
+
 # Validate the release candidate before cargo-release creates its version commit.
 [package.metadata.release]
 pre-release-hook = ["cargo", "clippy", "--", "-D", "warnings"]

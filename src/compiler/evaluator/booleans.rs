@@ -68,36 +68,44 @@ impl Evaluator {
             if r_val == Real::zero() {
                 Some(Shape::Sketch2D(sketch))
             } else {
-                let distance = r_val;
-                let offset = sketch.offset_rounded(distance);
-                Some(Shape::Sketch2D(
-                    if offset.is_empty() && !sketch.is_empty() {
-                        sketch
-                    } else {
-                        offset
-                    },
-                ))
+                Some(match sketch.try_offset_rounded(r_val) {
+                    Ok(offset) => Shape::Sketch2D(offset),
+                    Err(error) => {
+                        self.warnings.push(format!(
+                            "offset(r=...) was not applied; preserving the input profile: {error}"
+                        ));
+                        Shape::Sketch2D(sketch)
+                    }
+                })
             }
         } else if let Some(d_val) = delta {
             if d_val == Real::zero() {
                 Some(Shape::Sketch2D(sketch))
             } else {
-                Some(Shape::Sketch2D(sketch.offset(d_val)))
+                Some(match sketch.try_offset(d_val) {
+                    Ok(offset) => Shape::Sketch2D(offset),
+                    Err(error) => {
+                        self.warnings.push(format!(
+                            "offset(delta=...) was not applied; preserving the input profile: {error}"
+                        ));
+                        Shape::Sketch2D(sketch)
+                    }
+                })
             }
         } else {
             let d = Self::get_arg_real(args, "", 0).unwrap_or_else(Real::zero);
             if d == Real::zero() {
                 Some(Shape::Sketch2D(sketch))
             } else {
-                let distance = d;
-                let offset = sketch.offset_rounded(distance);
-                Some(Shape::Sketch2D(
-                    if offset.is_empty() && !sketch.is_empty() {
-                        sketch
-                    } else {
-                        offset
-                    },
-                ))
+                Some(match sketch.try_offset_rounded(d) {
+                    Ok(offset) => Shape::Sketch2D(offset),
+                    Err(error) => {
+                        self.warnings.push(format!(
+                            "offset(...) was not applied; preserving the input profile: {error}"
+                        ));
+                        Shape::Sketch2D(sketch)
+                    }
+                })
             }
         }
     }
