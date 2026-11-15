@@ -49,7 +49,10 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "proce
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.3", features = ["wasm_js"] }
+js-sys = "0.3"
+llm-wasm = "0.3"
 wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Window"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

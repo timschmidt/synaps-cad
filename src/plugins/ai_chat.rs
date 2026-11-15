@@ -793,15 +793,64 @@ async fn fetch_model_names(
     }
 }
 
+/// Longest server-requested `Retry-After` the browser build waits out before
+/// reporting the error instead.
+#[cfg(target_arch = "wasm32")]
+const MAX_RETRY_AFTER_MS: u32 = 60_000;
+
+#[cfg(target_arch = "wasm32")]
+async fn sleep_ms(ms: u32) {
+    let promise = js_sys::Promise::new(&mut |resolve, _reject| {
+        let scheduled = web_sys::window().and_then(|window| {
+            window
+                .set_timeout_with_callback_and_timeout_and_arguments_0(
+                    &resolve,
+                    i32::try_from(ms).unwrap_or(i32::MAX),
+                )
+                .ok()
+        });
+        if scheduled.is_none() {
+            let _ = resolve.call0(&js_sys::global());
+        }
+    });
+    let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+}
+
 #[cfg(target_arch = "wasm32")]
 async fn fetch_json(
-    request: reqwest::RequestBuilder,
+    mut request: reqwest::RequestBuilder,
     label: &str,
 ) -> Result<serde_json::Value, String> {
-    let response = request
-        .send()
-        .await
-        .map_err(|e| format!("{label} request failed. Browser CORS policy may require a proxy or CORS-enabled custom endpoint. Details: {e}"))?;
+    // Rate limits (429), Anthropic overload (529) and transient 5xx responses
+    // are retried with jittered backoff, honouring the server's Retry-After.
+    let policy = llm_wasm::retry::RetryPolicy::new(3, 500, 8_000)
+        .unwrap_or_else(|_| llm_wasm::retry::RetryPolicy::exponential());
+    let mut attempt = 1;
+    let response = loop {
+        let retry_request = request.try_clone();
+        let response = request
+            .send()
+            .await
+            .map_err(|e| format!("{label} request failed. Browser CORS policy may require a proxy or CORS-enabled custom endpoint. Details: {e}"))?;
+
+        let status = response.status().as_u16();
+        let retryable = policy.should_retry(attempt, status)
+            || (status == 529 && attempt < policy.max_attempts());
+        let Some(next_request) = retry_request.filter(|_| retryable) else {
+            break response;
+        };
+        let retry_after = response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok());
+        let delay = policy.delay_for_response(attempt, retry_after, js_sys::Math::random());
+        if delay > MAX_RETRY_AFTER_MS {
+            break response;
+        }
+        sleep_ms(delay).await;
+        request = next_request;
+        attempt += 1;
+    };
 
     if response.status() == reqwest::StatusCode::UNAUTHORIZED {
         return Err("Unauthorized (401). Please check your API key.".into());
