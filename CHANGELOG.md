@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - **GitHub Pages Deployment** — added a GitHub Actions workflow that builds the WASM release, generates `wasm-bindgen` web bindings, uploads the static bundle, and deploys it to GitHub Pages.
 - **Browser File Picker** — image attachments now use `rfd` file handles in the browser and read selected files directly from the Web File API.
 - **Browser AI Chat** — the WASM build can now send AI chat requests from the browser using direct HTTP calls for Anthropic, OpenAI-compatible providers, Gemini, Cohere, and Ollama, while reusing existing code application, verification, and error recovery.
+- **Browser AI Retries** — browser AI requests now retry rate-limited (429), overloaded (529) and transient 5xx responses for up to three attempts, waiting out the provider's `Retry-After` (up to 60 s) or a jittered backoff from the `llm-wasm` retry policy instead of failing on the first response.
 - **Compiler Benchmark** — added a reusable benchmark for the default scene with per-phase timing, selectable scenes and iteration counts, plus optional Hyper dispatch tracing for investigating compiler performance.
 
 ### Changed
